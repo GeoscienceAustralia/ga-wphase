@@ -69,22 +69,22 @@ When you launch an interactive bash session on the container (e.g. using the
 `run-or-build-container.sh` script), if wphase is mounted at `/wphase` then it
 will be automatically built and installed in development mode.
 
-Note that the reason we don't do this wnen building the container is that the
-source is not included in the build context. The modifications required to do
-this should be pretty clear.
+To use this script as-is, you'll need your greens functions to be stored at
+`~/wphase/greens`; but you should be able to modify the script to suit your
+needs.
+
 
 To start some process inside the container:
 
 ```sh
 sudo -E ./run-or-build-container.sh run <command>
 
-# for example, to start a bash terminal:
+# for example, to start a bash shell:
 sudo -E ./run-or-build-container.sh run bash
-```
 
-To use this script as-is, you'll need your greens functions to be stored at
-`~/wphase/greens`; but you should be able to modify the script to suit your
-needs.
+# to run the test suite:
+sudo -E ./run-or-build-container.sh run pytest
+```
 
 
 ## TODO

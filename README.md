@@ -6,7 +6,6 @@ National Earthquake Alert Centre.
 Based on the paper [*Source inversion of W phase: speeding up seismic tsunami
 warning* by Kanamori and Rivera, 2008](https://doi.org/10.1111/j.1365-246X.2008.03887.x)
 
-
 ## Requirements
 
 - Python 2.7 (with various libraries)
@@ -77,11 +76,15 @@ this should be pretty clear.
 To start some process inside the container:
 
 ```sh
-./run-or-build-container.sh run <command>
+sudo -E ./run-or-build-container.sh run <command>
 
 # for example, to start a bash terminal:
-./run-or-build-container.sh run bash
+sudo -E ./run-or-build-container.sh run bash
 ```
+
+To use this script as-is, you'll need your greens functions to be stored at
+`~/wphase/greens`; but you should be able to modify the script to suit your
+needs.
 
 
 ## TODO
@@ -98,7 +101,6 @@ pass, but many improvements are possible:
   under the more permissive Apache license (GA's preference).
 - Strip out the remaining dead code, refactor and document the remainder.
 - Create a docker image for production use
-
 
 ## License
 

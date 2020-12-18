@@ -6,11 +6,13 @@ National Earthquake Alert Centre.
 Based on the paper [*Source inversion of W phase: speeding up seismic tsunami
 warning* by Kanamori and Rivera, 2008](https://doi.org/10.1111/j.1365-246X.2008.03887.x)
 
+
 ## Requirements
 
 - Python 2.7 (with various libraries)
 - Greens functions. TODO: Do we have some reference explaining the required format?
-- SeisComP3 with python libraries (to use the fully integrated script)
+  We use a single-file database called `gfs_1.hdf5`.
+- Optional: SeisComP3 with python libraries (to use the fully integrated script)
 
 
 ## Direct Installation
@@ -80,6 +82,23 @@ To start some process inside the container:
 # for example, to start a bash terminal:
 ./run-or-build-container.sh run bash
 ```
+
+
+## TODO
+
+I extracted this code from our private repository and ran a quick clean-up
+pass, but many improvements are possible:
+
+- Migrate to Python 3 and add SeisComP 4+ support to [scripts/wphase](scripts/wphase).
+- Migrate from basemap to cartopy.
+- Look into replacing the libtau fortran code with obspy's travel time model.
+    - When this code was first developed, apparently the latter was too slow; but
+      things might have improved or there might be optimizations we can make.
+- If both of the two above points are achieved, I think we could relicense
+  under the more permissive Apache license (GA's preference).
+- Strip out the remaining dead code, refactor and document the remainder.
+- Create a docker image for production use
+
 
 ## License
 

@@ -10,7 +10,12 @@
 #-------------------------------------------------------------------------------
 
 mode="$1"
-command="${2-/bin/bash}"
+cmd="$2"
+if [ "$cmd" == "" ]; then
+    cmd="bash"
+else
+    cmd="bash -lc '$cmd'"
+fi
 
 CONTAINER_NAME=wphase
 BASEMAP_ARCHIVE_NAME=basemap.tar.gz
@@ -56,7 +61,7 @@ elif [ "$mode" == "run" ]; then
         -p 5000:9999 \
         -w "$WPHASE_HOME"/api \
         "$CONTAINER_NAME" \
-        "$command"
+        $cmd
 else
     echo 'First argument must be either "build" or "run".'
 fi

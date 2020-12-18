@@ -1,0 +1,719 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import json
+import time
+import errno
+import base64
+import readline
+import StringIO
+
+from contextlib import contextmanager
+from datetime import datetime, timedelta
+
+from obspy.core import UTCDateTime
+
+from seiscomp3 import DataModel, Logging as _sclog, IO
+from seiscomp3.Client import Application
+from seiscomp3 import Core, System
+
+from wphase import runwphase, settings
+
+try:
+    from wphase.aws import send_email_via_ses, write_to_s3
+except:
+    send_email_via_ses = None
+    write_to_s3 = None
+
+
+
+# this is used in determining the name of the log file that this application
+# logs to. I think this must be the name of this file, but cannot be sure as the
+# logging is Gempa's black magic.
+APPLICATION_NAME = 'wphase'
+
+LOG_FILE_NAME = '{}/.seiscomp3/log/{}.log'.format(
+    os.environ['HOME'], APPLICATION_NAME)
+
+SC3_TIME_FORMAT="%F %T.%f"
+
+
+
+class _lmetta(type):
+    info = _sclog.info
+    debug = _sclog.debug
+    warning = _sclog.warning
+
+
+
+class Logging(object):
+    __metaclass__ = _lmetta
+
+    @staticmethod
+    def error(msg):
+        print msg
+        _sclog.error(msg)
+
+
+
+class FMItem:
+    def __init__(self):
+        self.dip1 = None
+        self.dip2 = None
+        self.rake1 = None
+        self.rake2 = None
+        self.str1 = None
+        self.str2 = None
+        self.lat = None;
+        self.lon = None
+        self.depth = None
+        self.mag = None
+        self.mag_type = None
+        self.author = ""
+        self.tmtp = None
+        self.tmtt = None
+        self.tmrt = None
+        self.tmrr = None
+        self.tmrp = None
+        self.tmpp = None
+        self.usedPhaseCount = None
+        self.usedStationCount = None
+        self.azimuthalGap = None
+        self.originTime = None
+        self.centroid = False
+        self.overallMisfit = None
+
+
+@contextmanager
+def SCNotifier():
+    """seiscomp entities created (and associated with each other) inside this
+    context manager will be logged to the Notifier."""
+    try:
+        wasEnabled = DataModel.Notifier.IsEnabled()
+        DataModel.Notifier.Enable()
+        yield
+    finally:
+        DataModel.Notifier.SetEnabled(wasEnabled)
+
+
+class WPhaseParser(object):
+    def read(self, filename=None, json_data=None):
+        if filename is not None:
+            if json_data is not None:
+                Logging.error('exactly one of filename and json_data may be not None')
+                return None
+
+            with open(filename) as json_file:
+                Logging.info("reading file {}".format(filename))
+                return self.read(json_data=json.load(json_file))
+
+        else:
+            if json_data is None:
+                Logging.error('exactly one of filename and json_data may be not None')
+                return None
+
+            filename = 'passed json_data'
+
+            if "MomentTensor" not in json_data:
+                Logging.error("MomentTensor is missing: {}".format(filename))
+                return None
+
+            mt = json_data["MomentTensor"]
+            item = FMItem()
+
+            def getter(name, conv, to=None, err=True, dct=None):
+                if dct is None:
+                    dct = mt
+
+                if name not in dct:
+                    msg = '{} is missing in: {}'.format(name, filename)
+                    if err: raise Exception(msg)
+                    else: Logging.info(msg)
+
+                elif to is None:
+                    to = name
+
+                setattr(item, to, conv(dct[name]))
+
+            try:
+                getter('dip1',    float)
+                getter('dip2',    float)
+                getter('rake1',   float)
+                getter('rake2',   float)
+                getter('str1',    float)
+                getter('str2',    float)
+                getter('drlat',   float, 'lat')
+                getter('drlon',   float, 'lon')
+                getter('drdepth', float, 'depth')
+                getter('drmag',   float, 'mag')
+                getter('drmagt',  str,   'mag_type', False)
+                getter('auth',    str,   'author',   False)
+                getter('tmtp',    float, err=False)
+                getter('tmtt',    float, err=False)
+                getter('tmrt',    float, err=False)
+                getter('tmrr',    float, err=False)
+                getter('tmrp',    float, err=False)
+                getter('tmpp',    float, err=False)
+
+                # TODO check if number_of_channels can be really mapped to used phase count
+                getter('number_of_channels', int, 'usedPhaseCount',   False, json_data["QualityParams"])
+                getter('number_of_stations', int, 'usedStationCount', False, json_data["QualityParams"])
+                getter('azimuthal_gap',      float, 'azimuthalGap',     False, json_data["QualityParams"])
+                getter(
+                    'time',
+                    lambda x: Core.Time.FromString(str(x), SC3_TIME_FORMAT),
+                    'originTime',
+                    False,
+                    json_data["Event"])
+
+                # use OL4 if available, otherwise use OL2, otherwise leave out
+                try: 
+                    item.overallMisfit = float(json_data.get('OL3', json_data.get('OL2'))['misfit']) / 100.
+                except:
+                    Logging.info('could not get misfit')
+
+                item.centroid = json_data.has_key("Centroid")
+
+                Logging.info("parsed file %s successfully" % filename)
+
+                return item
+
+            except Exception as e:
+                Logging.error("failed to load json data:\n\t{}".format(e))
+                return None
+
+
+
+class App(Application):
+    def __init__(self, argc, argv):
+        Application.__init__(self, argc, argv)
+
+        # default location to write outputs to
+        self.output = '/tmp/wphase-output'
+        self.filename = None
+        self.mag_type = None
+        self.mag_value = None
+        self.server = 'IRIS'
+        self.networks = 'ALL'
+        self.region = 'not specified'
+        self.evid = None
+        self.resultid = None
+        self.notificationemail = None
+        self.fromemail = None
+        self.email_aws_region = None
+        self.eatws_env = None
+        self.write_s3 = False
+        self.bucket_name = None
+        self.agency = 'GA'
+
+        # enable messaging support
+        self.setMessagingEnabled(True)
+
+        # disable database access
+        self.setDatabaseEnabled(False, False)
+
+        # the application name exceeds the maximum allowed of spread so we use an abbreviation
+        self.setMessagingUsername("importmwga")
+
+        # send all objects to the focal mechanism group
+        self.setPrimaryMessagingGroup("FOCMECH")
+
+
+
+    def printUsage(self):
+        """
+        SC3 specific method.
+        """
+
+        print "\nimport_wphase_ga - imports whase moment tensor solutions\n"
+        print "Usage: python import_whase_ga[options] event"
+        Application.printUsage(self)
+
+
+
+    def createCommandLineDescription(self):
+        """
+        SC3 specific method.
+        """
+
+        self.commandline().addGroup("Output")
+        self.commandline().addStringOption(
+            "Output",
+            "outputs,o",
+            "Directory to write output to. Defaults to /tmp.")
+
+        self.commandline().addGroup("Input")
+        self.commandline().addStringOption(
+            "Input",
+            "lat",
+            "Latitude of the event.")
+        self.commandline().addStringOption(
+            "Input",
+            "lon",
+            "Longitude of the event.")
+        self.commandline().addStringOption(
+            "Input",
+            "depth",
+            "Depth of the event.")
+        self.commandline().addStringOption(
+            "Input",
+            "sourcezone",
+            "Source zone of the event.")
+        self.commandline().addStringOption(
+            "Input",
+            "time",
+            "Time of the event.")
+        self.commandline().addStringOption(
+            "Input",
+            "magtype",
+            "The type of magnitude of the triggering event.")
+        self.commandline().addStringOption(
+            "Input",
+            "magvalue",
+            "The magnitude of the triggering event.")
+        self.commandline().addStringOption(
+            "Input",
+            "server",
+            "The FDSN server to use. This can be any server supported by " + \
+            "the obspy FDSN client, or an arbitrar URL.")
+        self.commandline().addStringOption(
+            "Input",
+            "networks",
+            "A comma separated list of networks to use.")
+        self.commandline().addStringOption(
+            "Input",
+            "region",
+            "The name of the region in which the event occured.")
+        self.commandline().addStringOption(
+            "Input",
+            "evid",
+            "First part of the key under which to write the events to S3.")
+        self.commandline().addStringOption(
+            "Input",
+            "resultid",
+            "The second part of the key under which to write the events to S3.")
+        self.commandline().addStringOption(
+            "Input",
+            "notificationemail",
+            "Email address to send notification to.")
+        self.commandline().addStringOption(
+            "Input",
+            "fromemail",
+            "Email address to send notification from.")
+        self.commandline().addStringOption(
+            "Input",
+            "emailawsregion",
+            "AWS Region to send email notifications from.")
+        self.commandline().addStringOption(
+            "Input",
+            "eatwsenv",
+            "The EATWS environment this being called from (e.g. 'prod').")
+        self.commandline().addStringOption(
+            "Input",
+            "writeS3",
+            "Should results be written to S3?")
+        self.commandline().addStringOption(
+            "Input",
+            "bucketname",
+            "The name of the S3 bucket to write to.")
+        self.commandline().addStringOption(
+            "Input",
+            "agency",
+            "Agency code for SC3 output")
+
+
+
+    def validateParameters(self):
+        """
+        SeisComP3 specific method.
+        """
+
+        if not Application.validateParameters(self):
+            return False
+
+        def getter(name, to=None, default=None, conv=str):
+            if to is None:
+                to = name
+
+            try:
+                val = self.commandline().optionString(name)
+            except:
+                if default is not None:
+                    setattr(self, to, default)
+            else:
+                setattr(self, to, conv(val))
+
+        try:
+            # If there is an unrecognized option it must be a JSON file
+            # of wphase outputs. In this case, the file is parsed and pushed
+            # to the messaging system and written to disk.
+            self.filename = self.commandline().unrecognizedOptions()[0]
+        except:
+            # Otherwise we expect a description of the location. Wphase is
+            # then run and results pushed pushed to the messaging system
+            # and written to disk.
+
+            # depth only needed for BoM XML
+            try: depth = float(self.commandline().optionString("depth"))
+            except: depth = 0.
+
+            self.eqinfo = {
+                'lat' : float(self.commandline().optionString("lat")),
+                'lon' : float(self.commandline().optionString("lon")),
+                'dep' : depth, 
+                'time': UTCDateTime(self.commandline().optionString("time"))}
+
+            getter('sourcezone')
+            getter('magtype', 'mag_type')
+            getter('magvalue', 'mag_value', conv=float)
+            getter('outputs', 'output')
+            getter('server')
+            getter('networks')
+            getter('region')
+            getter('evid')
+            getter('resultid')
+            getter('notificationemail')
+            getter('fromemail')
+            getter('emailawsregion', 'email_aws_region', 'us-west-2')
+            getter('eatwsenv', 'eatws_env')
+            getter('writeS3', 'write_s3', False, lambda x: True)
+            getter('bucketname', 'bucket_name')
+            getter('agency')
+
+            if self.evid is not None:
+                self.output = os.path.join(self.output, self.evid)
+
+            if self.resultid is not None:
+                self.output = os.path.join(self.output, self.resultid)
+
+            if self.notificationemail is not None:
+                self.notificationemail = str(self.notificationemail).split(',')
+                if not self.write_s3:
+                    msg = 'requsted to send notification but not write to S3: will try and write to S3'
+                    Logging.warning(msg)
+                    self.write_s3 = True
+
+                if not self.fromemail:
+                    self.fromemail = self.notificationemail[0]
+
+            if self.write_s3 and (
+                    write_to_s3 is None or \
+                    self.evid is None or \
+                    self.bucket_name is None):
+                Logging.error('attempt to write to s3, but no evid provided.')
+                return False
+
+            if self.notificationemail is not None and (
+                    write_to_s3 is None or \
+                    send_email_via_ses is None or \
+                    self.mag_type is None or \
+                    self.mag_value is None or \
+                    self.evid is None or \
+                    self.resultid is None or \
+                    self.eatws_env is None):
+                Logging.error('cannot send email.')
+                return False
+
+        return True
+
+
+
+    def init(self):
+        """
+        SC3 specific method.
+
+        Returning False means that we do not enter the SeisComP3 run loop.
+        """
+
+        if Application.init(self) == False:
+            Logging.error('Application.init failed.')
+            return False
+
+        parser = WPhaseParser()
+        item = None
+        res = None
+
+        if self.filename is None:
+            try:
+                res = runwphase(
+                    output_dir=self.output,
+                    server=self.server,
+                    eqinfo=self.eqinfo,
+                    networks=self.networks)
+            except Exception:
+                from traceback import format_exc
+                Logging.error('failed to run wphase: {}'.format(format_exc()))
+            else:
+                if self.evid is not None:
+                    try:
+                        # TODO: Should this be done in runwphase?
+                        res[settings.WPHASE_EVENT_KEY]['id'] = self.evid
+                        with open(os.path.join(
+                                self.output,
+                                settings.WPHASE_OUTPUT_FILE_NAME), 'w') as of:
+                            json.dump(res, of)
+                    except Exception as e:
+                        # not sure how we would get here, but we just don't want
+                        # to stop the rest of processing
+                        Logging.error('failed to add event id to event: {}'.format(e))
+
+                try:
+                    try: res_dict = res.as_dict()
+                    except: res_dict = res
+                    item = parser.read(json_data=res_dict)
+                except Exception as e:
+                    Logging.error('failed to parse event JSON for SC3: {}'.format(e))
+
+        else:
+            try:
+                item = parser.read(filename=self.filename)
+            except Exception as e:
+                Logging.error('failed parse event JSON for SC3: {}'.format(e))
+
+        if item is not None:
+            try:
+                # create SeiscomP3 objects from focal mechanism item
+                with SCNotifier():
+                    (derivedOrigin, mag, fm) = self.createObjects(item)
+            except Exception as e:
+                Logging.error('failed create objects for SC3: {}'.format(e))
+
+            else:
+                try:
+                    # write output to file
+                    self.writeSC3XML(derivedOrigin, mag, fm)
+                except Exception as e:
+                    Logging.error('failed write SC3 XML to file: {}'.format(e))
+
+                try:
+                    # send it to SC3  messaing
+                    self.sendObjects(derivedOrigin, mag, fm)
+                except Exception as e:
+                    Logging.error('failed send objects to messaging: {}'.format(e))
+
+
+        if self.write_s3:
+            # We always want to write to S3, even in the event of failure as
+            # the JSON output may explain the failure. We also want to do it
+            # at the very end since we keep the sc3 log file.
+
+            try:
+                write_to_s3(
+                    self.output,
+                    self.bucket_name,
+                    self.evid,
+                    self.resultid,
+                    [(LOG_FILE_NAME, 'sc3.log')],
+                    Logging.error)
+            except Exception as e:
+                Logging.error('failed write to S3: {}'.format(e))
+            finally:
+                # since we may do more runs, remove the log so we don't
+                # contaminate later runs with info for this run
+                try:
+                    os.remove(LOG_FILE_NAME)
+                except OSError:
+                    # ... don't log this
+                    pass
+
+        if self.notificationemail:
+            # must be done after writing to S3
+            send_email_via_ses(
+                email_address = self.notificationemail,
+                bucket_name = self.bucket_name,
+                event_id = self.evid,
+                result_id = self.resultid,
+                eatws_env = self.eatws_env,
+                call_succeeded = res is not None and 'MomentTensor' in res,
+                from_email = self.fromemail,
+                email_aws_region = self.email_aws_region)
+
+        return False
+
+
+    def createObjects(self, item):
+        # get current time in UTC
+        time = Core.Time.GMT()
+
+        # create creation info
+        ci = DataModel.CreationInfo()
+        ci.setCreationTime(time)
+        ci.setAgencyID(self.agency)
+        ci.setAuthor(item.author)
+
+        originTime = DataModel.TimeQuantity(item.originTime)
+
+        # fill derived origin
+        derivedOrigin = DataModel.Origin.Create()
+        derivedOrigin.setCreationInfo(ci)
+        derivedOrigin.setTime(originTime)
+        derivedOrigin.setLatitude(DataModel.RealQuantity(item.lat))
+        derivedOrigin.setLongitude(DataModel.RealQuantity(item.lon))
+        derivedOrigin.setDepth(DataModel.RealQuantity(item.depth))
+        derivedOrigin.setEvaluationMode(DataModel.AUTOMATIC)
+        derivedOrigin.setEvaluationStatus(DataModel.CONFIRMED)
+
+        originQuality = DataModel.OriginQuality()
+        try: originQuality.setUsedPhaseCount(item.usedPhaseCount)
+        except: pass
+
+        try: originQuality.setUsedStationCount(item.usedStationCount)
+        except: pass
+
+        derivedOrigin.setQuality(originQuality)
+
+        if item.centroid: derivedOrigin.setType(DataModel.CENTROID)
+        else: derivedOrigin.setType(DataModel.HYPOCENTER)
+
+        # fill magnitude
+        try:
+            mag = DataModel.Magnitude.Create()
+            mag.setMagnitude(DataModel.RealQuantity(item.mag))
+            mag.setCreationInfo(ci)
+            mag.setOriginID(derivedOrigin.publicID())
+            mag.setType(item.mag_type)
+            mag.setStationCount(item.usedStationCount)
+            mag.setMethodID("wphase")
+        except Exception as e:
+            Logging.error('Failed to configure magnitude: {}'.format(e))
+
+        ## Set FocalMechanism
+        nodalPlanes = DataModel.NodalPlanes()
+        np1 = DataModel.NodalPlane()
+        np2 = DataModel.NodalPlane()
+
+        np1.setStrike(DataModel.RealQuantity(item.str1))
+        np1.setDip(DataModel.RealQuantity(item.dip1))
+        np1.setRake(DataModel.RealQuantity(item.rake1))
+
+        np2.setStrike(DataModel.RealQuantity(item.str2))
+        np2.setDip(DataModel.RealQuantity(item.dip2))
+        np2.setRake(DataModel.RealQuantity(item.rake2))
+
+        nodalPlanes.setNodalPlane1(np1)
+        nodalPlanes.setNodalPlane2(np2)
+
+        fm = DataModel.FocalMechanism.Create()
+        fm.setNodalPlanes(nodalPlanes)
+        fm.setTriggeringOriginID(derivedOrigin.publicID())
+        fm.setCreationInfo(ci)
+        fm.setMethodID("wphase")
+        fm.setEvaluationMode(DataModel.AUTOMATIC)
+        fm.setMisfit(item.overallMisfit)
+        fm.setStationPolarityCount(item.usedPhaseCount)
+
+        try: fm.setAzimuthalGap(item.azimuthalGap)
+        except: pass
+
+        # TODO set axis
+
+        # fill tensor
+        tensor = DataModel.Tensor()
+
+        try: tensor.setMtp(DataModel.RealQuantity(item.tmtp))
+        except: pass
+
+        try: tensor.setMtt(DataModel.RealQuantity(item.tmtt))
+        except: pass
+
+        try: tensor.setMrt(DataModel.RealQuantity(item.tmrt))
+        except: pass
+
+        try: tensor.setMrr(DataModel.RealQuantity(item.tmrr))
+        except: pass
+
+        try: tensor.setMrp(DataModel.RealQuantity(item.tmrp))
+        except: pass
+
+        try: tensor.setMpp(DataModel.RealQuantity(item.tmpp))
+        except: pass
+
+        # fill moment tensor object
+        mt = DataModel.MomentTensor.Create()
+        mt.setTensor(tensor)
+        mt.setCreationInfo(ci)
+        mt.setDerivedOriginID(derivedOrigin.publicID())
+        mt.setMethodID("wphase")
+
+        try: mt.setMomentMagnitudeID(mag.publicID())
+        except: pass
+
+        # Since we don't want to overrwite the event data itself, but we do
+        # want to explicitly associate our data to the correct event, we have
+        # to manually create Notifiers for these associations.
+        oRef = DataModel.OriginReference()
+        oRef.setOriginID(derivedOrigin.publicID())
+        DataModel.Notifier.Create(self.evid, DataModel.OP_ADD, derivedOrigin)
+        DataModel.Notifier.Create(self.evid, DataModel.OP_ADD, oRef)
+
+        fmRef = DataModel.FocalMechanismReference()
+        fmRef.setFocalMechanismID(fm.publicID())
+        DataModel.Notifier.Create(self.evid, DataModel.OP_ADD, fm)
+        DataModel.Notifier.Create(self.evid, DataModel.OP_ADD, fmRef)
+
+        # Adding these seems to *immediately* queue up the notifications; so we
+        # must do this *after* notifying the origin/FM so that scmaster
+        # processes everything in the correct order.
+        derivedOrigin.add(mag)
+        fm.add(mt)
+
+        return (derivedOrigin, mag, fm)
+
+
+
+    def sendObjects(self, origin, mag, fm):
+        Logging.info("sending focal mechanism %s" % fm.publicID())
+        try:
+            # serialize objects
+            msg = DataModel.Notifier.GetMessage()
+
+            # forward message to the messaging system
+            self.connection().send(msg)
+            Logging.info("sent focal mechanism successfully")
+
+            return True
+        except Exception, e:
+            Logging.error("caught unexpected error in sending message to "
+                          "messaging system %s" % str(e))
+            return False
+
+
+
+    def writeSC3XML(self, origin, mag, fm):
+        try:
+            # create SeisComP3 XMl Archive used to serialize objects
+            ar = IO.XMLArchive()
+
+            # enable formatted output
+            ar.setFormattedOutput(True)
+
+            output_filename = os.path.join(self.output, 'sc3.xml')
+
+            # try to create the output file
+            ar.create(output_filename)
+
+            # Serialize the objects
+            ar.writeObject(origin)
+            ar.writeObject(mag)
+            ar.writeObject(fm)
+            ar.close()
+
+            Logging.info("Stored focal mechanismn as {}".format(output_filename))
+            return True
+
+        except Exception, e:
+            Logging.warning("failed to write caught unexpected error in XML %s" % str(e))
+            return False
+
+
+
+def main():
+    argv = sys.argv
+    app = App(len(argv), argv)
+    sys.exit(app())
+
+
+
+if __name__ == "__main__":
+    main()

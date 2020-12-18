@@ -1,0 +1,5 @@
+*.pyc
+*.log
+_Inline
+*.png
+outputs

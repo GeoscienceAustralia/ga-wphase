@@ -1,0 +1,8 @@
+*.py[cd]
+*.so
+.spyderproject
+*.swp
+.idea/
+build/
+Wphase_PSI.egg*/
+_libtaumodule.c

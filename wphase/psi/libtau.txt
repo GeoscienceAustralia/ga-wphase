@@ -1,0 +1,2 @@
+The code in libtau.f was previously included in obspy, licensed under the LGPL:
+https://github.com/obspy/obspy/commit/f6237de2d14e0cf12a98e9fff201eb76e7b3ac06

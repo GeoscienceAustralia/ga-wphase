@@ -90,17 +90,24 @@ sudo -E ./run-or-build-container.sh run pytest
 ## TODO
 
 I extracted this code from our private repository and ran a quick clean-up
-pass, but many improvements are possible:
+pass, but many more improvements are possible:
 
 - Migrate to Python 3 and add SeisComP 4+ support to [scripts/wphase](scripts/wphase).
+- Improve the Python API to return the results (focal mech,
+  derived origin, etc) in ObsPy or SeisComP data structures instead of the
+  current nested dictionaries.
 - Migrate from basemap to cartopy.
 - Look into replacing the libtau fortran code with obspy's travel time model.
     - When this code was first developed, apparently the latter was too slow; but
       things might have improved or there might be optimizations we can make.
 - If both of the two above points are achieved, I think we could relicense
   under the more permissive Apache license (GA's preference).
-- Strip out the remaining dead code, refactor and document the remainder.
-- Create a docker image for production use
+- Create a fully-baked docker image for production use.
+- Strip out any remaining dead code, refactor and improve documentation of the
+  remainder.
+- Create a fully-integrated SeisComP plugin/daemon that watches the messaging
+  bus for events matching certain criteria and runs automatically (like
+  `scautomt` does).
 
 ## License
 

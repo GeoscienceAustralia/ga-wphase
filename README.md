@@ -1,7 +1,7 @@
 # GA W-Phase
 
 Software used for running wphase moment tensor + centroid inversions in the
-National Earthquake Alert Centre.
+National Earthquake Alert Centre at Geoscience Australia.
 
 Based on the paper [*Source inversion of W phase: speeding up seismic tsunami
 warning* by Kanamori and Rivera, 2008](https://doi.org/10.1111/j.1365-246X.2008.03887.x)
@@ -11,7 +11,8 @@ warning* by Kanamori and Rivera, 2008](https://doi.org/10.1111/j.1365-246X.2008.
 
 - Python 2.7 (with various libraries)
 - Green's functions (see the section below)
-- Optional: SeisComP3 with python libraries (to use the fully integrated script)
+- Optional: SeisComP3 with python libraries (to use the CLI script to push
+  results into a SeisComP3 system)
 
 
 ## Green's Functions
@@ -66,9 +67,10 @@ sudo pip install -e .
 
 Required environment variables:
 
-- `WPHASE_HOME`: absolute path of a working directory forwphase, e.g. `/home/you/wphase`
-- `WPHASE_GREENS_FUNCTIONS`: absolute path to greens functions (either a directory or a hdf5
-  file)
+- `WPHASE_HOME`: absolute path of a working directory for wphase, e.g.
+  `/home/you/wphase`
+- `WPHASE_GREENS_FUNCTIONS`: absolute path to greens functions (either a
+  directory or a hdf5 file, as described above)
 
 You can then run W-Phase in a couple of ways:
 

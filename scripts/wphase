@@ -596,7 +596,6 @@ class App(Application):
 
         fm = DataModel.FocalMechanism.Create()
         fm.setNodalPlanes(nodalPlanes)
-        fm.setTriggeringOriginID(derivedOrigin.publicID())
         fm.setCreationInfo(ci)
         fm.setMethodID("wphase")
         fm.setEvaluationMode(DataModel.AUTOMATIC)

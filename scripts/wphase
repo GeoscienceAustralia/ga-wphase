@@ -213,8 +213,8 @@ class App(Application):
         # disable database access
         self.setDatabaseEnabled(False, False)
 
-        # the application name exceeds the maximum allowed of spread so we use an abbreviation
-        self.setMessagingUsername("importmwga")
+        # default spread username
+        self.setMessagingUsername("gawphase")
 
         # send all objects to the focal mechanism group
         self.setPrimaryMessagingGroup("FOCMECH")

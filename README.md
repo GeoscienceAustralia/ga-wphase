@@ -77,14 +77,29 @@ You can then run W-Phase in a couple of ways:
 - Directly from python, with basic results returned in a nested dict and
   visualizations written to a provided output directory. See e.g.
   [`test_runwphase`](tests/test_runwphase.py) for a minimal example.
+
 - Using the command-line script [`wphase`](scripts/wphase), which takes its
   input as (a lot of!) command-line arguments and can send the basic results
   directly to a SeisComP3 messaging system, and the visualizations to an Amazon
-  S3 bucket.  (Note that the docker container below does not have SeisComP
-  included, so it won't work there.)
+  S3 bucket.
 
-  TODO: Provide an example of using this script to push data into sc3.
+  For example, if you have an FDSN server at http://localhost:8081 and a
+  SeisComP3 messaging system (spread) at localhost:4803, the following script
+  would attempt to solve for the centroid moment tensor of an event at the
+  given location and time, and if successful, send the results to seiscomp
+  under the given event ID.
 
+```sh
+wphase \
+    --evid ga2020yskxhe \
+    --lat 5.2 \
+    --lon 125.47 \
+    --depth 42 \
+    --time '2020-12-15T23:22:01Z' \
+    --outputs /tmp/wphase-outputs \
+    --server http://localhost:8081 \
+    --host localhost:4803
+```
 
 ## Using Docker
 
@@ -116,8 +131,24 @@ sudo -E ./run-or-build-container.sh run bash
 
 # to run the test suite:
 sudo -E ./run-or-build-container.sh run pytest
+
+# to run the same example as above:
+sudo -E ./run-or-build-container.sh wphase \
+    --evid ga2020yskxhe \
+    --lat 5.2 \
+    --lon 125.47 \
+    --depth 42 \
+    --time '2020-12-15T23:22:01Z' \
+    --outputs /tmp/wphase-outputs \
+    --server http://localhost:8081 \
+    --host localhost:4803
 ```
 
+Since the `./run-or-build-container.sh` script uses [host
+networking](https://docs.docker.com/network/host/), this last example would
+still be able to contact the FDSN and Spread servers running on your host.
+Alternatively, you could of course use some other Docker networking scheme and
+swap out localhost for an appropriate hostname or IP.
 
 ## TODO
 

@@ -358,11 +358,15 @@ class App(Application):
             try: depth = float(self.commandline().optionString("depth"))
             except: depth = 0.
 
-            self.eqinfo = {
-                'lat' : float(self.commandline().optionString("lat")),
-                'lon' : float(self.commandline().optionString("lon")),
-                'dep' : depth, 
-                'time': UTCDateTime(self.commandline().optionString("time"))}
+            try:
+                self.eqinfo = {
+                    'lat' : float(self.commandline().optionString("lat")),
+                    'lon' : float(self.commandline().optionString("lon")),
+                    'dep' : depth,
+                    'time': UTCDateTime(self.commandline().optionString("time"))}
+            except Exception:
+                Logging.error('You must provide either lat/lon/time or a JSON payload')
+                return False
 
             getter('sourcezone')
             getter('magtype', 'mag_type')
@@ -427,7 +431,6 @@ class App(Application):
         """
 
         if Application.init(self) == False:
-            Logging.error('Application.init failed.')
             return False
 
         parser = WPhaseParser()

@@ -6,12 +6,42 @@ National Earthquake Alert Centre.
 Based on the paper [*Source inversion of W phase: speeding up seismic tsunami
 warning* by Kanamori and Rivera, 2008](https://doi.org/10.1111/j.1365-246X.2008.03887.x)
 
+
 ## Requirements
 
 - Python 2.7 (with various libraries)
-- Greens functions. TODO: Do we have some reference explaining the required format?
-  We use a single-file database called `gfs_1.hdf5`.
+- Green's functions (see the section below)
 - Optional: SeisComP3 with python libraries (to use the fully integrated script)
+
+
+## Green's Functions
+
+The Green's Function database used for W-Phase at GA is the same as those used
+by Kanamori and Rivera in their original implementation - see
+[here](http://wphase.unistra.fr/wiki/doku.php/wphase#green_s_function_databases)
+for their information regarding these. You can contact them to attempt to
+obtain a copy of their original database; or attempt to generate a new one
+yourself using the PREM model. The database is stored as a directory structure
+containing SAC files, following this template:
+
+    H{DEPTH}/{MT_COMPONENT}/GF.{DISTANCE}.SY.LH{C}.SAC
+
+Where:
+
+- `DEPTH` is the depth in km, which must end in `.5`
+- `MT_COMPONENT` is the moment tensor component, one of `PP`, `RP`, `RR`, `RT`,
+  `TP`, `TT` where `P` is &phi;, `T` is &theta;, `R` is r.
+- `DISTANCE` is the distance in 10ths of a degree, padded to 4 characters.
+  (In the current implementation, your database *must* include every 10th of a
+  degree from 0 to 90 degrees.)
+- `C` is the waveform component
+
+For example, the vertical (`Z`) Green's function for M<sub>&phi;&phi;</sub>=1
+(`PP`) at a depth of 500.5km and distance of 90 degrees is stored at
+`H500.5/PP/GF.0900.SY.LHZ.SAC`.
+
+As alternative to this very large file structure, an equivalent structure can be
+stored inside a HDF5 file.
 
 
 ## Direct Installation
@@ -37,8 +67,8 @@ sudo pip install -e .
 Required environment variables:
 
 - `WPHASE_HOME`: absolute path of a working directory forwphase, e.g. `/home/you/wphase`
-- `WPHASE_GREENS_FUNCTIONS`: absolute path to greens functions (either a hdf5
-  file or a directory in SAC structure)
+- `WPHASE_GREENS_FUNCTIONS`: absolute path to greens functions (either a directory or a hdf5
+  file)
 
 You can then run W-Phase in a couple of ways:
 

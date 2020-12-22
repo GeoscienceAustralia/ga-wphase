@@ -1,12 +1,13 @@
 #!/bin/bash
 
-#-------------------------------------------------------------------------------
-# create required folders for wphase
-#-------------------------------------------------------------------------------
-install -g "$(id -gn)" -o "$(id -un)" -d \
-    "$WPHASE_GREENS_FUNCTIONS_DIR" \
-    "$WPHASE_WEB_OUTPUTS_ROOT"
+set -e
 
-# When developing by mounting the source directory into a container, we need
-# to run build to compile the fortran code:
-echo 'cd "$WPHASE_HOME" && pip install -e .' >> ~/.bashrc
+if [ "$1" == "dev" ]; then
+    # When developing by mounting the source directory into a container, we need
+    # to run build to compile the fortran code every time the container is
+    # launched:
+    echo 'cd "$WPHASE_HOME" && pip install -e .' >> ~/.bashrc
+else
+    # For the production container, we can do the build immediately.
+    cd "$WPHASE_HOME" && pip install -e .
+fi

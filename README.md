@@ -3,6 +3,8 @@
 Software used for running wphase moment tensor + centroid inversions in the
 National Earthquake Alert Centre at Geoscience Australia.
 
+Originally implemented by Roberto Benavente.
+
 Based on the paper [*Source inversion of W phase: speeding up seismic tsunami
 warning* by Kanamori and Rivera, 2008](https://doi.org/10.1111/j.1365-246X.2008.03887.x)
 
@@ -104,12 +106,15 @@ wphase \
 ## Using Docker
 
 If you're running Linux with Docker and curl installed, you should be able to
-build a docker container for development simply by running (as root)
-`./run-or-build-container.sh build`.
+build docker containers for development and production simply by running (as root)
+`./run-or-build-container.sh build`. By default, this will build two very
+similar containers: `wphase` and `wphase-dev`.
 
-The resulting container is designed for development use; it does not have wphase
-installed, just all the dependencies. I mount the current folder at */wphase*.
-when launching the container (which is done for you if you use
+### `wphase-dev`
+
+This container is designed for development use; it does not have
+wphase installed, just all the dependencies. I mount the current folder at
+*/wphase*.  when launching the container (which is done for you if you use
 `run-or-build-container.sh`).
 
 When you launch an interactive bash session on the container (e.g. using the
@@ -150,6 +155,42 @@ still be able to contact the FDSN and Spread servers running on your host.
 Alternatively, you could of course use some other Docker networking scheme and
 swap out localhost for an appropriate hostname or IP.
 
+### `wphase-prod`
+
+This container is designed for production use: it includes a fully-built
+version of wphase and directly invokes the wphase script by default. It does
+*not* include the greens functions database (since these are typically huge),
+so you'll still need to mount these; and you'll also need to mount a directory
+to `/outputs`, where the output files will be stored.
+
+You can use the `run-wphase` directive to invoke the production container,
+automatically handling the directory mounting:
+
+```
+# to run the same example as above:
+sudo -E ./run-or-build-container.sh run-wphase \
+    --evid ga2020yskxhe \
+    --lat 5.2 \
+    --lon 125.47 \
+    --depth 42 \
+    --time '2020-12-15T23:22:01Z' \
+    --server http://localhost:8081 \
+    --host localhost:4803
+```
+
+In this example, the output files would then be available at
+`./outputs/ga2020ykxhe/`.
+
+All the usual seiscomp configuration flags are available:
+
+- `--debug` to see log output
+- `--user` to set the messaging username (default is `gawphase`)
+- `-g` to set the primary messaging group on which results are sent (default is
+  `FOCMECH`)
+
+You can get a full list of options by invoking `run-wphase` with `--help`.
+
+
 ## TODO
 
 I extracted this code from our private repository and ran a quick clean-up
@@ -165,12 +206,14 @@ pass, but many more improvements are possible:
       things might have improved or there might be optimizations we can make.
 - If both of the two above points are achieved, I think we could relicense
   under the more permissive Apache license (GA's preference).
-- Create a fully-baked docker image for production use.
-- Strip out any remaining dead code, refactor and improve documentation of the
-  remainder.
+- Strip out any remaining dead code, then refactor what's left and improve the
+  documentation.
 - Create a fully-integrated SeisComP plugin/daemon that watches the messaging
   bus for events matching certain criteria and runs automatically (like
   `scautomt` does).
+- Reimplement the production container on top of a slimmer base OS to decrease
+  the filesize.
+
 
 ## License
 

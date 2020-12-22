@@ -13,7 +13,8 @@ def test_ga2016rhegtj_with_iris_fdsn(tmpdir):
                     'dep': 40.5,
                     'time': UTCDateTime("2016-09-01T16:38:00Z")}
 
-    r = runwphase(eqinfo=ga2016rhegtj, server='IRIS', output_dir=str(tmpdir))
+    r = runwphase(eqinfo=ga2016rhegtj, server='IRIS', output_dir=str(tmpdir),
+                  output_dir_can_exist=True)
     MT = r['MomentTensor']
     assert MT['drmagt'] == 'Mww'
     assert close(MT['drlon'], 178.955)

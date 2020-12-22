@@ -3,6 +3,6 @@
 .spyderproject
 Thumbs.db
 _Inline/
-build/
+/build/
 Wphase.egg*/
-test*.png
+/outputs

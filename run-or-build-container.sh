@@ -56,6 +56,7 @@ elif [ "$mode" == "run" ]; then
     docker run -it --rm \
         --mount type=bind,source=$HOME/wphase/greens,target="$WPHASE_GREENS_FUNCTIONS_DIR",readonly=true \
         --mount type=bind,source=`pwd`,target="$WPHASE_HOME" \
+        --network=host \
         -e "WPHASE_HOME=$WPHASE_HOME" \
         -e "WPHASE_HOST_NAME=0.0.0.0" \
         -p 5000:9999 \

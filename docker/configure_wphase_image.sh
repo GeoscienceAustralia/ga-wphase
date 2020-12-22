@@ -9,4 +9,4 @@ install -g "$(id -gn)" -o "$(id -un)" -d \
 
 # When developing by mounting the source directory into a container, we need
 # to run build to compile the fortran code:
-echo 'cd "$WPHASE_HOME" && pip install -e .' > ~/.bashrc
+echo 'cd "$WPHASE_HOME" && pip install -e .' >> ~/.bashrc

@@ -74,7 +74,7 @@ You can then run W-Phase in a couple of ways:
 
 - Directly from python, with basic results returned in a nested dict and
   visualizations written to a provided output directory. See e.g.
-  [`test_runner_fdsn`](tests/test_runner_fdsn.py) for a minimal example.
+  [`test_runwphase`](tests/test_runwphase.py) for a minimal example.
 - Using the command-line script [`wphase`](scripts/wphase), which takes its
   input as (a lot of!) command-line arguments and can send the basic results
   directly to a SeisComP3 messaging system, and the visualizations to an Amazon

@@ -1,7 +1,7 @@
 import numpy as np
 from obspy.core import UTCDateTime
 
-from wphase._runner_fdsn import runwphase
+from wphase import runwphase
 
 def close(a, b):
     return np.isclose(a, b, rtol=1e-3)

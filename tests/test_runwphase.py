@@ -1,28 +1,68 @@
+import os
+try:
+    from urllib.request import urlretrieve
+except ImportError:
+    from urllib import urlretrieve
+
 import numpy as np
 from obspy.core import UTCDateTime
+import obspy
 
 from wphase import runwphase
 
 def close(a, b):
     return np.isclose(a, b, rtol=1e-3)
 
-def test_ga2016rhegtj_with_iris_fdsn(tmpdir):
-    # A mag ~7 near NZ
-    ga2016rhegtj = {'lat': -37.228,
-                    'lon': 178.755,
-                    'dep': 40.5,
-                    'time': UTCDateTime("2016-09-01T16:38:00Z")}
+DIR = os.path.join(os.path.dirname(__file__), 'temp')
 
-    r = runwphase(eqinfo=ga2016rhegtj, server='IRIS', output_dir=str(tmpdir),
-                  output_dir_can_exist=True)
+# A mag ~7 near NZ
+ga2016rhegtj = {'lat': -37.228,
+                'lon': 178.755,
+                'dep': 40.5,
+                'time': UTCDateTime("2016-09-01T16:38:00Z")}
+
+def test_ga2016rhegtj_from_fixed_datasets(tmpdir):
+    # Retrieving data dynamically from IRIS means we can get different inputs
+    # and thus different results; so we run a validation test using fixed inputs instead.
+    # These datasets are several MB in size, so we don't store them in the repository.
+    # They are instead downloaded from this public S3 bucket.
+    SERVER = 'http://eatws-public.s3.amazonaws.com'
+    wfpath = '/ga2016rhegtj.mseed'
+    invpath = '/ga2016rhegtj.xml'
+    if not os.path.isdir(DIR):
+        os.mkdir(DIR)
+    if not os.path.exists(DIR + wfpath):
+        urlretrieve(SERVER + wfpath, DIR + wfpath)
+    if not os.path.exists(DIR + invpath):
+        urlretrieve(SERVER + invpath, DIR + invpath)
+
+    waveforms = obspy.read(DIR + wfpath)
+    inventory = obspy.read_inventory(DIR + invpath)
+
+    r = runwphase(eqinfo=ga2016rhegtj,
+                  output_dir=str(tmpdir), output_dir_can_exist=True,
+                  waveforms=waveforms, inventory=inventory)
+    assert 'MomentTensor' in r
     MT = r['MomentTensor']
     assert MT['drmagt'] == 'Mww'
-    assert close(MT['drlon'], 178.955)
-    assert close(MT['drlat'], -37.028)
-    assert close(MT['drmag'], 7.075)
-    assert close(MT['str1'], 353.57)
-    assert close(MT['str2'], 210.60)
-    assert close(MT['dip1'], 16.964)
-    assert close(MT['dip2'], 76.312)
-    assert close(MT['rake1'], 234.19)
-    assert close(MT['rake2'], -79.88)
+
+    expected = {
+        'drlat': -37.028000000000013,
+        'drlon': 178.95500000000004,
+        'drmag': 7.076100455160292,
+        'drdepth': 30.5,
+        'tmtp': 1.23520733106147e+19,
+        'tmtt': -7.590380797061462e+18,
+        'tmrt': 1.7999111784412908e+19,
+        'tmrr': -1.8604474993078469e+19,
+        'tmrp': 4.0737340823329858e+19,
+        'tmpp': 2.6194855790139933e+19
+    }
+    for k, v in expected.items():
+        assert close(MT[k], v)
+
+def test_ga2016rhegtj_with_iris_fdsn(tmpdir):
+    # We run the test with IRIS, but don't validate the exact results.
+    r = runwphase(eqinfo=ga2016rhegtj, server='IRIS',
+                  output_dir=str(tmpdir), output_dir_can_exist=True)
+    assert isinstance(r['MomentTensor']['drmag'], float)

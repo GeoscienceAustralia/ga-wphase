@@ -12,12 +12,12 @@ except Exception:
 import os
 import json
 
-import wphase.settings
+from wphase import settings
 from wphase._runner_fdsn import runwphase as wphase_runner
 
 def runwphase(
     output_dir,
-    server,
+    server = None,
     greens_functions_dir = settings.GREEN_DIR,
     n_workers_in_pool = settings.N_WORKERS_IN_POOL,
     processing_level = 3,
@@ -38,7 +38,7 @@ def runwphase(
     :param output_dir_can_exist: Can the output directory already exist?
     """
 
-    if server.lower() == 'antelope':
+    if server is not None and server.lower() == 'antelope':
         raise Exception('Antelope is no longer supported.')
 
     # Make the output directory (fails if it already exists).
@@ -59,7 +59,7 @@ def runwphase(
         **kwargs)
 
     wphase_results[settings.HOST_NAME_KEY] = settings.WPHASE_HOST_NAME
-    wphase_results[settings.WPHASE_DATA_SOURCE_KEY] = server
+    wphase_results[settings.WPHASE_DATA_SOURCE_KEY] = server if server else "local files"
 
     # save the results
     with open(os.path.join(output_dir, settings.WPHASE_OUTPUT_FILE_NAME), 'w') as out:

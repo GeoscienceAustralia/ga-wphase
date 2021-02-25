@@ -115,7 +115,7 @@ filt_coef_50_5 = [np.array([ 6.1745085908969892093609010963461969367926940321922
 
 
 
-def fast_decimatation(tr, factor, filt_coef):
+def fast_decimation(tr, factor, filt_coef):
     """
     Decimates a trace using a Chebychev filter as implemented :py:meth:`obspy.core.Trace.decimate`.
     This speeds up the decimation process as the filter is designed once (the coefficients are
@@ -162,8 +162,8 @@ def dec20to1(tr, fast=True):
     """
 
     if fast:
-        tr = fast_decimatation(tr, 2, filt_coef_20_2)
-        tr = fast_decimatation(tr, 10, filt_coef_10_10)
+        tr = fast_decimation(tr, 2, filt_coef_20_2)
+        tr = fast_decimation(tr, 10, filt_coef_10_10)
     else:
         tr.decimate(2).decimate(10)
     ts = -0.221 - 2.783
@@ -186,8 +186,8 @@ def dec40to1(tr, fast=True):
     """
 
     if fast:
-        tr = fast_decimatation(tr, 4, filt_coef_40_4)
-        tr = fast_decimatation(tr, 10, filt_coef_10_10)
+        tr = fast_decimation(tr, 4, filt_coef_40_4)
+        tr = fast_decimation(tr, 10, filt_coef_10_10)
     else:
         tr.decimate(4).decimate(10)
     ts = -0.265 - 2.783
@@ -210,10 +210,34 @@ def dec50to1(tr, fast=True):
     """
 
     if fast:
-        tr = fast_decimatation(tr, 5, filt_coef_50_5)
-        tr = fast_decimatation(tr, 10, filt_coef_10_10)
+        tr = fast_decimation(tr, 5, filt_coef_50_5)
+        tr = fast_decimation(tr, 10, filt_coef_10_10)
     else:
         tr.decimate(5).decimate(10)
     ts = -0.27 - 2.783
     tr.stats.starttime += ts
     return tr
+
+def dec1to1(tr, fast=True):
+    return tr
+
+# Sampling rates we will decimate. Channels with other sampling rates will be ignored.
+decimators = {
+    1.:  dec1to1,
+    20.: dec20to1,
+    40.: dec40to1,
+    50.: dec50to1,
+}
+
+class CannotDecimate(Exception):
+    def __init__(self, samp_rate):
+        self.args = [samp_rate]
+    def __str__(self):
+        return "non-decimable sampling rate of {}Hz".format(self.args[0])
+
+def decimateTo1Hz(tr):
+    samp_rate = tr.stats.sampling_rate
+    try:
+        return decimators[samp_rate](tr, True)
+    except KeyError:
+        raise CannotDecimate(samp_rate)

@@ -1,0 +1,4 @@
+The file duplicates.mseed contains a short segment of data from four stations
+(DRS, KDU, KNRA, MTN), with each packet duplicated. This can sometimes arise in
+real situations, and previously caused w-phase to fail; so this file is used as
+test data for a regression test.

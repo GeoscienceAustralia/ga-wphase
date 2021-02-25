@@ -15,7 +15,7 @@ except ImportError:
 
 from wphase.psi.taup_fortran import getPtime
 import wphase.psi.seismoutils as SU
-from wphase.psi.decimate import dec20to1, dec40to1, dec50to1
+from wphase.psi.decimate import decimateTo1Hz, CannotDecimate
 
 def Build_metadata_dict(
         inv,
@@ -116,7 +116,8 @@ def GetData(
         prune_cutoffs=(1., 2., 3., 4., 5., 5.),
         decimate=True,
         reject_incomplete=False,
-        req_times=None):
+        req_times=None,
+        waveforms=None):
     '''
     This function will get the waveforms associated with an event to
     perform a WP inversion.
@@ -145,11 +146,6 @@ def GetData(
 
         If *add_ptime* is *False* return the stream only.
     '''
-
-    # Sampling rates we will decimate. Channels with other sampling rates will be ignored.
-    decimable_BH_ch = [20., 40., 50.]
-
-    server = client.base_url
 
     hyplat = eqinfo['lat']
     hyplon = eqinfo['lon']
@@ -207,45 +203,49 @@ def GetData(
         now = UTCDateTime()
         trlist_in_dist_range = [trid for trid in trlist_in_dist_range
             if req_times[trid][1] < now]
-    st = Stream()
 
-    # Create the subsets for each request
-    bulk = []
-    for trid in trlist_in_dist_range:
-        net, sta, loc, cha = trid.split('.')
-        t1, t2 = req_times[trid]
-        bulk.append([net, sta, loc, cha, t1, t2])
-    bulk_chunks = [bulk[i_chunk:i_chunk + bulk_chunk_len]
-                   for i_chunk in xrange(0, len(bulk), bulk_chunk_len)]
+    if waveforms:
+        # waveforms provided as input, just clean them
+        print '{} traces provided as input'.format(len(waveforms))
+        st = waveforms
+    else:
+        # fetch waveforms from server
+        print 'fetching data from {}'.format(client.base_url)
+        st = Stream()
 
-    # make a call for each subset
-    # TODO: One might want to do this in parallel.
-    for chunk in bulk_chunks:
-        # TODO: Do want to try/catch here?
-        try:
-            st += client.get_waveforms_bulk(chunk)
-        except Exception as e:
-            print 'Problem with request from server: {}'.format(server)
-            print e
-            continue
+        # Create the subsets for each request
+        bulk = []
+        for trid in trlist_in_dist_range:
+            net, sta, loc, cha = trid.split('.')
+            t1, t2 = req_times[trid]
+            bulk.append([net, sta, loc, cha, t1, t2])
+        bulk_chunks = [bulk[i_chunk:i_chunk + bulk_chunk_len]
+                       for i_chunk in xrange(0, len(bulk), bulk_chunk_len)]
+
+        # make a call for each subset
+        # TODO: One might want to do this in parallel.
+        for chunk in bulk_chunks:
+            # TODO: Do want to try/catch here?
+            try:
+                st += client.get_waveforms_bulk(chunk)
+            except Exception as e:
+                print 'Problem with request from server: {}'.format(client.base_url)
+                print e
+                continue
 
     # Removing gappy traces (that is channel ids that are repeated)
     st = remove_gappy_traces(st)
+    print '{} traces remaining after throwing out gappy ones'.format(len(st))
 
     # Decimating BH channels. This can be done in parallel.
     if decimate:
         st_B_cha_list = [tr for tr in st if tr.id.split('.')[-1][0] == 'B']
         for tr in st_B_cha_list:
-            samp_rate = tr.stats.sampling_rate
-            if samp_rate not in decimable_BH_ch:
+            try:
+                decimateTo1Hz(tr)
+            except CannotDecimate as e:
+                print "Removing trace {} - {}".format(tr.id, e)
                 st.remove(tr)
-                continue
-            if samp_rate == 20.:
-                tr = dec20to1(tr, fast=True)
-            elif samp_rate == 40:
-                tr = dec40to1(tr, fast=True)
-            elif samp_rate == 50:
-                tr = dec50to1(tr, fast=True)
 
         # Creating contigous arrays for the traces. This may speed up things later.
         for tr in st:

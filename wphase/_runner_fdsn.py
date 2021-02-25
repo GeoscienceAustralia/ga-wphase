@@ -18,6 +18,7 @@ def load_metadata(
         eqinfo,
         dist_range,
         networks,
+        inventory=None,
         t_before_origin=3600.,
         t_after_origin=3600.):
 
@@ -30,6 +31,8 @@ def load_metadata(
         used to filter the request for the inventory and hence only need be
         very rough (within the week would probably be equally sensible).
     """
+    if inventory:
+        return Build_metadata_dict(inventory)
 
     def caller_maker(depth=0, **kwargs):
         if 'network' in kwargs and kwargs['network'].upper() == 'ALL':
@@ -106,7 +109,7 @@ def load_metadata(
 
 def runwphase(
         output_dir,
-        server,
+        server = None,
         greens_functions_dir = settings.GREEN_DIR,
         n_workers_in_pool = settings.N_WORKERS_IN_POOL,
         processing_level = 3,
@@ -122,9 +125,11 @@ def runwphase(
         bulk_chunk_len = 200,
         prune_cutoffs = None,
         use_only_z_components = True,
-        inventory = None,
         user=None,
         password=None,
+        inventory=None,
+        waveforms=None,
+        pickle_inputs=True,
         **kwargs):
 
     """
@@ -141,63 +146,65 @@ def runwphase(
     :param output_dir_can_exist: Can the output directory already exist?
     """
 
-    streams = None
+    if server is None and (inventory is None or waveforms is None):
+        raise ValueError("If not providing server, you must provide inventory and waveforms.")
+
     meta_t_p = {}
-    streams_pickle_file = os.path.join(output_dir, 'streams.pkl')
 
     if eqinfo is None:
         raise ValueError('eqinfo cannot be None')
 
-    client = Client(server, user=user, password=password)
+    if server is not None:
+        client = Client(server, user=user, password=password)
+    else:
+        client = None
 
-    # get the metadata for the server
-    if streams is None:
-        # get the metadata for the event
-        metadata, failures = load_metadata(
-                client,
-                eqinfo,
-                dist_range,
-                networks)
+    # get the metadata for the event
+    metadata, failures = load_metadata(
+            client,
+            eqinfo,
+            dist_range,
+            networks,
+            inventory=inventory)
 
-        if failures:
-            with open(os.path.join(output_dir, 'inv.errs'), 'w') as err_out:
-                err_out.write('\n'.join(failures))
+    if failures:
+        with open(os.path.join(output_dir, 'inv.errs'), 'w') as err_out:
+            err_out.write('\n'.join(failures))
 
-        if metadata:
-            with open(os.path.join(output_dir, 'inv.pkl'), 'w') as inv_out:
-                pickle.dump(metadata, inv_out)
-        else:
-            raise Exception('no metadata avaialable for: \n{}'.format(
-                '\n\t'.join('{}: {}'.format(*kv) for kv in eqinfo.iteritems())))
+    if not metadata:
+        raise Exception('no metadata available for: \n{}'.format(
+            '\n\t'.join('{}: {}'.format(*kv) for kv in eqinfo.iteritems())))
+
+    if pickle_inputs:
+        with open(os.path.join(output_dir, 'inv.pkl'), 'w') as inv_out:
+            pickle.dump(metadata, inv_out)
 
     wphase_output = OutputDict()
 
     try:
-        if streams is None:
-            print 'fetching data from {}'.format(server)
-            # load the data for from the appropriate server
-            streams_, meta_t_p_ = GetData(
-                eqinfo,
-                metadata,
-                wp_tw_factor = wp_tw_factor,
-                t_beforeP = t_beforeP,
-                t_afterWP = t_afterWP,
-                client = client,
-                dist_range = dist_range,
-                add_ptime = add_ptime,
-                bulk_chunk_len = bulk_chunk_len,
-                prune_cutoffs = prune_cutoffs)
+        # load the data for from the appropriate server
+        streams, meta_t_p_ = GetData(
+            eqinfo,
+            metadata,
+            wp_tw_factor = wp_tw_factor,
+            t_beforeP = t_beforeP,
+            t_afterWP = t_afterWP,
+            client = client,
+            dist_range = dist_range,
+            add_ptime = add_ptime,
+            bulk_chunk_len = bulk_chunk_len,
+            prune_cutoffs = prune_cutoffs,
+            waveforms = waveforms)
 
-            if use_only_z_components:
-                streams_ = streams_.select(component = 'Z')
+        if use_only_z_components:
+            streams = streams.select(component = 'Z')
 
-            if streams is None:
-                streams = streams_
-            else:
-                streams += streams_
+            print '{} traces remaining after restricting to Z'.format(len(streams))
 
-            meta_t_p.update(meta_t_p_)
+        meta_t_p.update(meta_t_p_)
 
+        if pickle_inputs:
+            streams_pickle_file = os.path.join(output_dir, 'streams.pkl')
             with open(streams_pickle_file, 'w') as pkle:
                 pickle.dump((meta_t_p, streams), pkle)
 

@@ -2,10 +2,8 @@ import os
 from subprocess import PIPE, Popen
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.integrate import cumtrapz
 from scipy.signal import boxcar,triang, convolve, detrend
 from obspy.core import read, Trace, Stream, UTCDateTime
-from obspy.signal.filter import bandpass
 
 try:
     from obspy.io.xseed import Parser
@@ -27,7 +25,7 @@ try:
 except ImportError:
     from obspy.signal.invsim import paz2AmpValueOfFreqResp as paz_2_amplitude_value_of_freq_resp
 
-import bpfilter as bp
+from .bandpass import bandpassfilter
 
 def get_azimuths(sp):
     '''
@@ -210,7 +208,7 @@ def RTdeconv(data, om0, h, G, dt,corners=4, baselinelen=60., taperlen= 10.\
     aux = c2*datap2 + c1*datap1[:-1] + c0*data[:-2]
     accel[2:] = np.cumsum(aux)
 
-    accel = bp.bandpassfilter(accel,len(accel),dt ,corners , 1 , fmin,fmax)
+    accel = bandpassfilter(accel, dt, corners, fmin, fmax, npass=1)
 
     vel = np.zeros(len(data))
     vel[1:] = 0.5*dt*np.cumsum(accel[:-1]+accel[1:])

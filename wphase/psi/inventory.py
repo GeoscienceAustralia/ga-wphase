@@ -230,10 +230,7 @@ def GetData(
             continue
 
     # Removing gappy traces (that is channel ids that are repeated)
-    trlist_data = [tr.id for tr in st]
-    rep_ids = [trid for trid, nrep in Counter(trlist_data).items()
-               if nrep > 1]
-    st = Stream(tr for tr in st if tr.id not in rep_ids)
+    st = remove_gappy_traces(st)
 
     # Decimating BH channels. This can be done in parallel.
     if decimate:
@@ -259,6 +256,13 @@ def GetData(
     else:
         return st
 
+def remove_gappy_traces(st):
+    """Given an obspy Stream, remove any traces with gaps."""
+    trlist_data = [tr.id for tr in st]
+    rep_ids = [trid for trid, nrep in Counter(trlist_data).items()
+               if nrep > 1]
+    st = Stream(tr for tr in st if tr.id not in rep_ids)
+    return st
 
 
 def station_pruningNEZ(trlist_pre, META, cutoffs):

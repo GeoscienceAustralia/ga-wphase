@@ -8,12 +8,12 @@ import numpy as np
 
 try:
     from obspy.geodetics import locations2degrees
-except:
+except ImportError:
     from obspy.core.util.geodetics import locations2degrees
 
 try:
     from obspy.geodetics.base import gps2dist_azimuth
-except:
+except ImportError:
     from obspy.core.util.geodetics import gps2DistAzimuth as gps2dist_azimuth
 
 import datautils as DU
@@ -230,7 +230,7 @@ def station_pruning(META,trlist, cutoffs=[1.,2.,5], units='deg'):
                 if dist <= cutoff:
                     try:
                         red_trlist.remove(trid1)
-                    except:
+                    except Exception:
                         pass
         trlist = list(red_trlist)# copying reduced list
     return   trlist

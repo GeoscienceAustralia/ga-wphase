@@ -22,7 +22,7 @@ from wphase import runwphase, settings
 
 try:
     from wphase.aws import send_email_via_ses, write_to_s3
-except:
+except Exception:
     send_email_via_ses = None
     write_to_s3 = None
 
@@ -170,7 +170,7 @@ class WPhaseParser(object):
                 # use OL4 if available, otherwise use OL2, otherwise leave out
                 try: 
                     item.overallMisfit = float(json_data.get('OL3', json_data.get('OL2'))['misfit']) / 100.
-                except:
+                except Exception:
                     Logging.info('could not get misfit')
 
                 item.centroid = json_data.has_key("Centroid")
@@ -338,7 +338,7 @@ class App(Application):
 
             try:
                 val = self.commandline().optionString(name)
-            except:
+            except Exception:
                 if default is not None:
                     setattr(self, to, default)
             else:
@@ -349,14 +349,14 @@ class App(Application):
             # of wphase outputs. In this case, the file is parsed and pushed
             # to the messaging system and written to disk.
             self.filename = self.commandline().unrecognizedOptions()[0]
-        except:
+        except Exception:
             # Otherwise we expect a description of the location. Wphase is
             # then run and results pushed pushed to the messaging system
             # and written to disk.
 
             # depth only needed for BoM XML
             try: depth = float(self.commandline().optionString("depth"))
-            except: depth = 0.
+            except Exception: depth = 0.
 
             try:
                 self.eqinfo = {
@@ -463,7 +463,7 @@ class App(Application):
 
                 try:
                     try: res_dict = res.as_dict()
-                    except: res_dict = res
+                    except Exception: res_dict = res
                     item = parser.read(json_data=res_dict)
                 except Exception as e:
                     Logging.error('failed to parse event JSON for SC3: {}'.format(e))
@@ -559,10 +559,10 @@ class App(Application):
 
         originQuality = DataModel.OriginQuality()
         try: originQuality.setUsedPhaseCount(item.usedPhaseCount)
-        except: pass
+        except Exception: pass
 
         try: originQuality.setUsedStationCount(item.usedStationCount)
-        except: pass
+        except Exception: pass
 
         derivedOrigin.setQuality(originQuality)
 
@@ -606,7 +606,7 @@ class App(Application):
         fm.setStationPolarityCount(item.usedPhaseCount)
 
         try: fm.setAzimuthalGap(item.azimuthalGap)
-        except: pass
+        except Exception: pass
 
         # TODO set axis
 
@@ -614,22 +614,22 @@ class App(Application):
         tensor = DataModel.Tensor()
 
         try: tensor.setMtp(DataModel.RealQuantity(item.tmtp))
-        except: pass
+        except Exception: pass
 
         try: tensor.setMtt(DataModel.RealQuantity(item.tmtt))
-        except: pass
+        except Exception: pass
 
         try: tensor.setMrt(DataModel.RealQuantity(item.tmrt))
-        except: pass
+        except Exception: pass
 
         try: tensor.setMrr(DataModel.RealQuantity(item.tmrr))
-        except: pass
+        except Exception: pass
 
         try: tensor.setMrp(DataModel.RealQuantity(item.tmrp))
-        except: pass
+        except Exception: pass
 
         try: tensor.setMpp(DataModel.RealQuantity(item.tmpp))
-        except: pass
+        except Exception: pass
 
         # fill moment tensor object
         mt = DataModel.MomentTensor.Create()
@@ -639,7 +639,7 @@ class App(Application):
         mt.setMethodID("wphase")
 
         try: mt.setMomentMagnitudeID(mag.publicID())
-        except: pass
+        except Exception: pass
 
         # Since we don't want to overrwite the event data itself, but we do
         # want to explicitly associate our data to the correct event, we have

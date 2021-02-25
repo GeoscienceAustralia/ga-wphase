@@ -50,8 +50,10 @@ stored inside a HDF5 file.
 ## Direct Installation
 
 First, install the matplotlib basemap toolkit following [their
-instructions](https://github.com/matplotlib/basemap). The rest of the python
-dependencies can be installed automatically from PyPI.
+instructions](https://github.com/matplotlib/basemap).  You can skip this step
+if you don't want to use the map plotting functionality.
+
+The rest of the python dependencies can be installed automatically from PyPI.
 
 From the same directory as this README lives in:
 

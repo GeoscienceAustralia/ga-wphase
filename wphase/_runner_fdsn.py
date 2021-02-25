@@ -130,6 +130,7 @@ def runwphase(
         inventory=None,
         waveforms=None,
         pickle_inputs=True,
+        make_maps=True,
         **kwargs):
 
     """
@@ -225,7 +226,8 @@ def runwphase(
                 WPOL = processing_level,
                 working_dir = output_dir,
                 eqinfo = eqinfo,
-                metadata = meta_t_p)
+                metadata = meta_t_p,
+                make_maps=make_maps)
 
     except WPInvWarning, e:
         wphase_output.add_warning(str(e))

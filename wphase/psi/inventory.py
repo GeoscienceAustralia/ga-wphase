@@ -257,7 +257,10 @@ def GetData(
         return st
 
 def remove_gappy_traces(st):
-    """Given an obspy Stream, remove any traces with gaps."""
+    """Given an obspy Stream, remove any traces with gaps.
+
+    We do this by first merging, then looking for duplicate waveformStreamIDs."""
+    st = st.merge()
     trlist_data = [tr.id for tr in st]
     rep_ids = [trid for trid, nrep in Counter(trlist_data).items()
                if nrep > 1]

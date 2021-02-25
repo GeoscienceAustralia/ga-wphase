@@ -109,7 +109,7 @@ def GetData(
         wp_tw_factor=15,
         t_beforeP=1500., # seconds
         t_afterWP=60.,   # seconds
-        server="http://rhe-eqm-seiscomp-dev.dev.lan:8081/",
+        client=None,
         dist_range=(5., 90.), # degrees
         add_ptime=True,
         bulk_chunk_len=200,
@@ -137,6 +137,7 @@ def GetData(
         always be true when running Wphase**.
     :param dict req_times: Dictionary keyed by channel id containing the start
         and end times of the time window required by Wphase.
+    :param client: An Obspy FDSN client.
 
     :return: If *add_ptime* is *True*, then return a two element tuple containing:
         #. An :py:class:`obspy.core.stream.Stream` containing the data.
@@ -148,7 +149,7 @@ def GetData(
     # Sampling rates we will decimate. Channels with other sampling rates will be ignored.
     decimable_BH_ch = [20., 40., 50.]
 
-    client = Client(server)
+    server = client.base_url
 
     hyplat = eqinfo['lat']
     hyplon = eqinfo['lon']

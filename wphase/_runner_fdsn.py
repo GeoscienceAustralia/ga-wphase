@@ -14,7 +14,7 @@ from wphase.wputils import OutputDict, WPInvProfiler, post_process_wpinv
 
 
 def load_metadata(
-        server_url,
+        client,
         eqinfo,
         dist_range,
         networks,
@@ -30,8 +30,6 @@ def load_metadata(
         used to filter the request for the inventory and hence only need be
         very rough (within the week would probably be equally sensible).
     """
-
-    client = Client(server_url)
 
     def caller_maker(depth=0, **kwargs):
         if 'network' in kwargs and kwargs['network'].upper() == 'ALL':
@@ -102,7 +100,7 @@ def load_metadata(
                                 # TODO: log that this has happenned
                                 pass
 
-    return (server_url,) + Build_metadata_dict(inv)
+    return Build_metadata_dict(inv)
 
 
 
@@ -125,6 +123,8 @@ def runwphase(
         prune_cutoffs = None,
         use_only_z_components = True,
         inventory = None,
+        user=None,
+        password=None,
         **kwargs):
 
     """
@@ -148,31 +148,13 @@ def runwphase(
     if eqinfo is None:
         raise ValueError('eqinfo cannot be None')
 
+    client = Client(server, user=user, password=password)
+
     # get the metadata for the server
     if streams is None:
-        print 'creating metadata dict'
-        if inventory is not None:
-            if server is None:
-                raise TypeError('server cannot be None if inventory is not None')
-            if isinstance(server, list):
-                if not isinstance(inventory, list):
-                    raise TypeError('inventory must be a list if server is a list')
-                if len(server) != len(inventory):
-                    raise ValueError('inventory must be the same length server')
-                metas = [Build_metadata_dict(i) for i in inventory]
-                servers = server
-            elif isinstance(server, basestring):
-                metas = [Build_metadata_dict(inventory)]
-                servers = [server]
-            else:
-                raise TypeError('server must be instance of list or basestring')
-
-        elif server.lower() == 'antelope':
-            raise Exception("Antelope is no longer supported.")
-
         # get the metadata for the event
-        server, metadata, failures = load_metadata(
-                server,
+        metadata, failures = load_metadata(
+                client,
                 eqinfo,
                 dist_range,
                 networks)
@@ -188,37 +170,33 @@ def runwphase(
             raise Exception('no metadata avaialable for: \n{}'.format(
                 '\n\t'.join('{}: {}'.format(*kv) for kv in eqinfo.iteritems())))
 
-        servers = [server]
-        metas = [metadata]
-
     wphase_output = OutputDict()
 
     try:
         if streams is None:
-            for server, metadata in izip(servers, metas):
-                print 'fetching data from {}'.format(server)
-                # load the data for from the appropriate server
-                streams_, meta_t_p_ = GetData(
-                    eqinfo,
-                    metadata,
-                    wp_tw_factor = wp_tw_factor,
-                    t_beforeP = t_beforeP,
-                    t_afterWP = t_afterWP,
-                    server = server,
-                    dist_range = dist_range,
-                    add_ptime = add_ptime,
-                    bulk_chunk_len = bulk_chunk_len,
-                    prune_cutoffs = prune_cutoffs)
+            print 'fetching data from {}'.format(server)
+            # load the data for from the appropriate server
+            streams_, meta_t_p_ = GetData(
+                eqinfo,
+                metadata,
+                wp_tw_factor = wp_tw_factor,
+                t_beforeP = t_beforeP,
+                t_afterWP = t_afterWP,
+                client = client,
+                dist_range = dist_range,
+                add_ptime = add_ptime,
+                bulk_chunk_len = bulk_chunk_len,
+                prune_cutoffs = prune_cutoffs)
 
-                if use_only_z_components:
-                    streams_ = streams_.select(component = 'Z')
+            if use_only_z_components:
+                streams_ = streams_.select(component = 'Z')
 
-                if streams is None:
-                    streams = streams_
-                else:
-                    streams += streams_
+            if streams is None:
+                streams = streams_
+            else:
+                streams += streams_
 
-                meta_t_p.update(meta_t_p_)
+            meta_t_p.update(meta_t_p_)
 
             with open(streams_pickle_file, 'w') as pkle:
                 pickle.dump((meta_t_p, streams), pkle)

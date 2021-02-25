@@ -217,7 +217,8 @@ def post_process_wpinv(
     WPOL,
     working_dir,
     eqinfo,
-    metadata):
+    metadata,
+    make_maps=True):
 
     # if we could not do OL3, resort to OL2
     if WPOL == 3 and 'OL3' not in wphase_output:
@@ -269,23 +270,24 @@ def post_process_wpinv(
         wphase_output.add_warning("Failed to create beachball for OL{}.".format(
             WPOL))
 
-    try:
-        # Make a plot of the station distribution
-        hyplat =  eqinfo['lat']
-        hyplon =  eqinfo['lon']
-        lats = [metadata[trid]['latitude'] for trid in trlist]
-        lons = [metadata[trid]['longitude'] for trid in trlist]
-        stationDistPrefix = os.path.join(
-            working_dir,
-            settings.WPHASE_STATION_DISTRIBUTION_PREFIX)
-        stacov(
-            (hyplat,hyplon),
-            lats,
-            lons,
-            mt=M,
-            filename=stationDistPrefix + '.png')
-    except Exception:
-        wphase_output.add_warning("Failed to create station distribtuion plot.")
+    if make_maps:
+        try:
+            # Make a plot of the station distribution
+            hyplat =  eqinfo['lat']
+            hyplon =  eqinfo['lon']
+            lats = [metadata[trid]['latitude'] for trid in trlist]
+            lons = [metadata[trid]['longitude'] for trid in trlist]
+            stationDistPrefix = os.path.join(
+                working_dir,
+                settings.WPHASE_STATION_DISTRIBUTION_PREFIX)
+            stacov(
+                (hyplat,hyplon),
+                lats,
+                lons,
+                mt=M,
+                filename=stationDistPrefix + '.png')
+        except Exception:
+            wphase_output.add_warning("Failed to create station distribtuion plot.")
 
     if len(trlist):
         # Secondly the wphase traces plot, syn Vs obs
@@ -420,52 +422,53 @@ def post_process_wpinv(
         wphase_output['Centroid']['latitude'] = round(cenloc[0],3)
         wphase_output['Centroid']['longitude'] = round(cenloc[1],3)
 
-        # draw the grid search plot
-        inputs = inputs_latlon
-        N_grid = len(inputs)
-        misfits = np.array([moments[i_grid][1] for i_grid in range(N_grid)])
-        coords = np.array([inputs[i_grid][2] for i_grid in range(N_grid)])
-        lats, lons, depths = coords[:,:].T
-        depths_unique  = sorted(set(depths))
-        N_depths = len(depths_unique)
-        misfits_depth_mat = np.zeros((N_grid/N_depths,N_depths))
-        latlon_depth_mat = np.zeros((N_grid/N_depths,2,N_depths))
-        ##We will sum the misfits over the depths
-        for i_col,depth in enumerate(depths_unique):
-            i_depth = np.where(depths == depth)
-            misfits_depth_mat[:,i_col] = misfits[i_depth]
-            latlon_depth_mat[:,:,i_col] = coords[i_depth,:2]
+        if make_maps:
+            # draw the grid search plot
+            inputs = inputs_latlon
+            N_grid = len(inputs)
+            misfits = np.array([moments[i_grid][1] for i_grid in range(N_grid)])
+            coords = np.array([inputs[i_grid][2] for i_grid in range(N_grid)])
+            lats, lons, depths = coords[:,:].T
+            depths_unique  = sorted(set(depths))
+            N_depths = len(depths_unique)
+            misfits_depth_mat = np.zeros((N_grid/N_depths,N_depths))
+            latlon_depth_mat = np.zeros((N_grid/N_depths,2,N_depths))
+            ##We will sum the misfits over the depths
+            for i_col,depth in enumerate(depths_unique):
+                i_depth = np.where(depths == depth)
+                misfits_depth_mat[:,i_col] = misfits[i_depth]
+                latlon_depth_mat[:,:,i_col] = coords[i_depth,:2]
 
-        ##This should be the same for all depths
-        latlon_depth_grid =  latlon_depth_mat[:,:,0]
-        #Suming all the depths
-        misfits_depth_mat =  misfits_depth_mat.sum(axis=1)
-        scaled_field = misfits_depth_mat/misfits_depth_mat.min()
+            ##This should be the same for all depths
+            latlon_depth_grid =  latlon_depth_mat[:,:,0]
+            #Suming all the depths
+            misfits_depth_mat =  misfits_depth_mat.sum(axis=1)
+            scaled_field = misfits_depth_mat/misfits_depth_mat.min()
 
-        fig = plt.figure()
-        #ax =
-        fig.add_axes((0.05, 0.18, 0.95, 0.75))
-        grid_plot = plot_field(latlon_depth_grid,scaled_field,
-                      s=100./scaled_field**2,c=scaled_field,
-                      topofile = None, zorder=999)
-        fig = grid_plot['fig']
-        scatter = grid_plot['field']
-        #ax = grid_plot['ax']
-        fig.colorbar(scatter, cax=None, orientation='vertical')
-        m = grid_plot['map']
-        eplat, eplon = eqinfo['lat'],eqinfo['lon']
-        cenlat, cenlon = cenloc[0], cenloc[1]
-        m.scatter(eplon,eplat,s = 1000,c='y',marker="*",alpha=1.,latlon=True, zorder=1000)
-        m.scatter(cenlon,cenlat,s = 1000,c='w',marker="*",alpha=1.,latlon=True, zorder=1001)
-        grid_legend="Colorbar indicates normalized centroid misfit (1 is minimum)\n" +\
-                "Yelow star: Hypocenter location\n" +\
-                "White star: optimal centroid location"
-        fig.text(.5, -.05, grid_legend, horizontalalignment='center')
-        gridSearchPrefix = os.path.join(working_dir, settings.WPHASE_GRID_SEARCH_PREFIX)
-        plt.savefig(gridSearchPrefix, bbox_inches='tight')
-        plt.close('all')
-        #np.savetxt('PS_grid_misfits.txt', scaled_field)
-        #np.savetxt('PS_grid_latlon.txt', latlon_depth_grid)
+            fig = plt.figure()
+            #ax =
+            fig.add_axes((0.05, 0.18, 0.95, 0.75))
+            grid_plot = plot_field(latlon_depth_grid,scaled_field,
+                          s=100./scaled_field**2,c=scaled_field,
+                          topofile = None, zorder=999)
+            fig = grid_plot['fig']
+            scatter = grid_plot['field']
+            #ax = grid_plot['ax']
+            fig.colorbar(scatter, cax=None, orientation='vertical')
+            m = grid_plot['map']
+            eplat, eplon = eqinfo['lat'],eqinfo['lon']
+            cenlat, cenlon = cenloc[0], cenloc[1]
+            m.scatter(eplon,eplat,s = 1000,c='y',marker="*",alpha=1.,latlon=True, zorder=1000)
+            m.scatter(cenlon,cenlat,s = 1000,c='w',marker="*",alpha=1.,latlon=True, zorder=1001)
+            grid_legend="Colorbar indicates normalized centroid misfit (1 is minimum)\n" +\
+                    "Yelow star: Hypocenter location\n" +\
+                    "White star: optimal centroid location"
+            fig.text(.5, -.05, grid_legend, horizontalalignment='center')
+            gridSearchPrefix = os.path.join(working_dir, settings.WPHASE_GRID_SEARCH_PREFIX)
+            plt.savefig(gridSearchPrefix, bbox_inches='tight')
+            plt.close('all')
+            #np.savetxt('PS_grid_misfits.txt', scaled_field)
+            #np.savetxt('PS_grid_latlon.txt', latlon_depth_grid)
 
     else:
         results = None

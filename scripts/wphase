@@ -24,7 +24,6 @@ except Exception:
     write_to_s3 = None
 
 
-
 # this is used in determining the name of the log file that this application
 # logs to. I think this must be the name of this file, but cannot be sure as the
 # logging is Gempa's black magic.
@@ -68,6 +67,7 @@ class App(Application):
         self.write_s3 = False
         self.bucket_name = None
         self.agency = 'GA'
+        self.make_maps = True
 
         # enable messaging support
         self.setMessagingEnabled(True)
@@ -183,6 +183,10 @@ class App(Application):
             "Input",
             "agency",
             "Agency code for SC3 output")
+        self.commandline().addStringOption(
+            "Input",
+            "make-maps",
+            "Whether to create map plots or not.")
 
 
 
@@ -246,6 +250,7 @@ class App(Application):
             getter('writeS3', 'write_s3', False, lambda x: True)
             getter('bucketname', 'bucket_name')
             getter('agency')
+            getter('make-maps', 'make_maps', False, lambda x: True)
 
             if self.evid is not None:
                 self.output = os.path.join(self.output, self.evid)
@@ -307,7 +312,8 @@ class App(Application):
                     output_dir=self.output,
                     server=self.server,
                     eqinfo=self.eqinfo,
-                    networks=self.networks)
+                    networks=self.networks,
+                    make_maps=self.make_maps)
             except Exception:
                 from traceback import format_exc
                 Logging.error('failed to run wphase: {}'.format(format_exc()))

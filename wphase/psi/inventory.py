@@ -5,12 +5,12 @@ from obspy.core import UTCDateTime, Stream
 
 try:
     from obspy.clients.fdsn import Client
-except:
+except ImportError:
     from obspy.fdsn import Client
 
 try:
     from obspy.geodetics import locations2degrees
-except:
+except ImportError:
     from obspy.core.util.geodetics import locations2degrees
 
 from wphase.psi.taup_fortran import getPtime
@@ -96,7 +96,7 @@ def Build_metadata_dict(
                                   'sensitivity'    : sens,
                                   'sampling_rate'  : samp_rate
                                  }
-                except:
+                except Exception:
                     failures.append(trid)
 
     return metadata, failures

@@ -16,17 +16,17 @@ from obspy.core import read, Stream
 
 try:
     from obspy.geodetics import locations2degrees
-except:
+except ImportError:
     from obspy.core.util.geodetics import locations2degrees
 
 try:
     from obspy.geodetics.base import gps2dist_azimuth
-except:
+except ImportError:
     from obspy.core.util.geodetics import gps2DistAzimuth as gps2dist_azimuth
 
 try:
     from obspy.signal.invsim import paz_2_amplitude_value_of_freq_resp
-except:
+except ImportError:
     from obspy.signal.invsim import paz2AmpValueOfFreqResp as paz_2_amplitude_value_of_freq_resp
 
 _greens_function_dir = None
@@ -1292,7 +1292,7 @@ def core_inversion(t_h,t_d,cmtloc,orig, periods, MRF,
             try:
                 fillvec1 = data_[ 0] * np.ones(FirstValid)
                 fillvec2 = data_[-1] * np.ones(FirstValid)
-            except:
+            except Exception:
                 print FirstValid
 
             data_ = np.concatenate((fillvec1, data_, fillvec2))
@@ -1430,7 +1430,7 @@ def core_inversion_wrapper(allarg):
 
     try:
         return core_inversion(*arg,**kwargs)
-    except:
+    except Exception:
         raise Exception("".join(traceback.format_exception(*sys.exc_info())))
 
 
@@ -1693,7 +1693,7 @@ def get_timedelay_misfit(t_d, GFmatrix, Ntrace, ObservedDisp, max_t_d):
 
         inversion = lstsq(GFmatrix_sm, ObservedDisp, rcond=None)
         return inversion[1][0]
-    except:
+    except Exception:
         raise Exception("".join(traceback.format_exception(*sys.exc_info())))
 
 

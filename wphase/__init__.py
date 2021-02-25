@@ -6,7 +6,7 @@ try:
     # to avoid: Exception _tkinter.TclError
     import matplotlib
     matplotlib.use('Agg')
-except:
+except Exception:
     pass
 
 import os

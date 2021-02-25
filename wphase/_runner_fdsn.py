@@ -71,7 +71,7 @@ def load_metadata(
         # first, try and get everything
         inv = caller_maker(network=networks)()
 
-    except:
+    except Exception:
         # ... that didn't work
         nets = caller_maker(network=networks, level='network')()
         inv = Inventory([], None)
@@ -81,21 +81,21 @@ def load_metadata(
         for net in nets:
             try:
                 inv += call1(net.code)
-            except:
+            except Exception:
                 # ... by station
                 stas = caller_maker(network=net.code, level='station')()
                 call2 = caller_maker(2)
                 for sta in stas[0]:
                     try:
                         inv += call2(net.code, sta.code)
-                    except:
+                    except Exception:
                         # ... by channel
                         chans = caller_maker(network=net.code, station=sta.code, level='channel')()
                         call3 = caller_maker(3)
                         for chan in chans[0][0]:
                             try:
                                 inv += call3(net.code, sta.code, chan.code)
-                            except:
+                            except Exception:
                                 # ... skip the channel
                                 # TODO: log that this has happenned
                                 pass

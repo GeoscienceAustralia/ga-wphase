@@ -16,7 +16,7 @@ except AttributeError:
 
 try:
     aux_plane = beachball.AuxPlane
-except:
+except Exception:
     aux_plane = beachball.aux_plane
 
 from wphase.psi import seismoutils
@@ -78,7 +78,7 @@ if settings.PROFILE_WPHASE:
                     with open(os.path.join(self.working_dir, 'timings.html'), 'w') as timings_file:
                         timings_file.write(self.profiler.output_html())
 
-    except:
+    except Exception:
         import cProfile, pstats, StringIO
         class WPInvProfiler(object):
             def __init__(self, wphase_output, *args, **kwargs):
@@ -245,7 +245,7 @@ def post_process_wpinv(
                 settings.WPHASE_BEACHBALL_PREFIX)
             plot_beachball(M_OL2, width=400,
                 outfile = beachBallPrefix + "_OL2.png", format='png')
-        except:
+        except Exception:
             wphase_output.add_warning("Failed to create beachball for OL2.")
 
     if 'OL2' in wphase_output:
@@ -265,7 +265,7 @@ def post_process_wpinv(
             settings.WPHASE_BEACHBALL_PREFIX, WPOL))
         plot_beachball(M, width=400,
             outfile = beachBallPrefix + ".png", format='png')
-    except:
+    except Exception:
         wphase_output.add_warning("Failed to create beachball for OL{}.".format(
             WPOL))
 
@@ -284,7 +284,7 @@ def post_process_wpinv(
             lons,
             mt=M,
             filename=stationDistPrefix + '.png')
-    except:
+    except Exception:
         wphase_output.add_warning("Failed to create station distribtuion plot.")
 
     if len(trlist):

@@ -9,22 +9,22 @@ from obspy.signal.filter import bandpass
 
 try:
     from obspy.io.xseed import Parser
-except:
+except ImportError:
     from obspy.xseed import Parser
 
 try:
     from obspy.geodetics import locations2degrees
-except:
+except ImportError:
     from obspy.core.util.geodetics import locations2degrees
 
 try:
     from obspy.geodetics.base import gps2dist_azimuth
-except:
+except ImportError:
     from obspy.core.util.geodetics import gps2DistAzimuth as gps2dist_azimuth
 
 try:
     from obspy.signal.invsim import paz_2_amplitude_value_of_freq_resp
-except:
+except ImportError:
     from obspy.signal.invsim import paz2AmpValueOfFreqResp as paz_2_amplitude_value_of_freq_resp
 
 import bpfilter as bp

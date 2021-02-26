@@ -386,10 +386,11 @@ def wpinv(
         i += 1
 
     # Sorting the IDs according to their distance to the source:
-    trlist_pre = [trlist_pre[i] for i in np.argsort(DIST) ]
-    tr_p2p = [tr_p2p[i] for i in np.argsort(DIST)]
+    sorted_indices = np.argsort(DIST)
+    trlist_pre = [trlist_pre[i] for i in sorted_indices]
+    tr_p2p = [tr_p2p[i] for i in sorted_indices]
+    AZI = [AZI[i] for i in sorted_indices]
     DIST = np.sort(DIST)
-    AZI = [AZI[i] for i in np.argsort(DIST)]
 
     # Median rejection
     median_p2p = np.median(tr_p2p)

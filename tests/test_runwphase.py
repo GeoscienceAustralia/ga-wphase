@@ -41,7 +41,9 @@ def test_ga2016rhegtj_from_fixed_datasets(tmpdir):
 
     r = runwphase(eqinfo=ga2016rhegtj,
                   output_dir=str(tmpdir), output_dir_can_exist=True,
-                  waveforms=waveforms, inventory=inventory)
+                  waveforms=waveforms, inventory=inventory,
+                  make_maps=False)
+
     assert 'MomentTensor' in r
 
     MT = r['MomentTensor']
@@ -64,5 +66,6 @@ def test_ga2016rhegtj_from_fixed_datasets(tmpdir):
 def test_ga2016rhegtj_with_iris_fdsn(tmpdir):
     # We run the test with IRIS, but don't validate the exact results.
     r = runwphase(eqinfo=ga2016rhegtj, server='IRIS',
-                  output_dir=str(tmpdir), output_dir_can_exist=True)
+                  output_dir=str(tmpdir), output_dir_can_exist=True,
+                  make_maps=False)
     assert isinstance(r['MomentTensor']['drmag'], float)

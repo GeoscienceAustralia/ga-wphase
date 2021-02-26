@@ -1,4 +1,8 @@
-import cPickle as pickle
+from __future__ import print_function
+from future import standard_library
+standard_library.install_aliases()
+from builtins import range
+import pickle as pickle
 from collections import Counter
 import numpy as np
 from obspy.core import UTCDateTime, Stream
@@ -156,7 +160,7 @@ def GetData(
     # the ids of channels which are within the specified distance range.
     trlist_in_dist_range = []
     tr_dists_in_range = []
-    for trid, stmeta in META.iteritems():
+    for trid, stmeta in META.items():
         stlat, stlon = stmeta['latitude'], stmeta['longitude']
         dist = locations2degrees(hyplat, hyplon, stlat, stlon)
         if dist >= dist_range[0] and dist <= dist_range[1]:
@@ -206,11 +210,11 @@ def GetData(
 
     if waveforms:
         # waveforms provided as input, just clean them
-        print '{} traces provided as input'.format(len(waveforms))
+        print('{} traces provided as input'.format(len(waveforms)))
         st = waveforms
     else:
         # fetch waveforms from server
-        print 'fetching data from {}'.format(client.base_url)
+        print('fetching data from {}'.format(client.base_url))
         st = Stream()
 
         # Create the subsets for each request
@@ -220,7 +224,7 @@ def GetData(
             t1, t2 = req_times[trid]
             bulk.append([net, sta, loc, cha, t1, t2])
         bulk_chunks = [bulk[i_chunk:i_chunk + bulk_chunk_len]
-                       for i_chunk in xrange(0, len(bulk), bulk_chunk_len)]
+                       for i_chunk in range(0, len(bulk), bulk_chunk_len)]
 
         # make a call for each subset
         # TODO: One might want to do this in parallel.
@@ -229,13 +233,13 @@ def GetData(
             try:
                 st += client.get_waveforms_bulk(chunk)
             except Exception as e:
-                print 'Problem with request from server: {}'.format(client.base_url)
-                print e
+                print('Problem with request from server: {}'.format(client.base_url))
+                print(e)
                 continue
 
     # Removing gappy traces (that is channel ids that are repeated)
     st = remove_gappy_traces(st)
-    print '{} traces remaining after throwing out gappy ones'.format(len(st))
+    print('{} traces remaining after throwing out gappy ones'.format(len(st)))
 
     # Decimating BH channels. This can be done in parallel.
     if decimate:
@@ -244,7 +248,7 @@ def GetData(
             try:
                 decimateTo1Hz(tr)
             except CannotDecimate as e:
-                print "Removing trace {} - {}".format(tr.id, e)
+                print("Removing trace {} - {}".format(tr.id, e))
                 st.remove(tr)
 
         # Creating contigous arrays for the traces. This may speed up things later.
@@ -262,7 +266,7 @@ def remove_gappy_traces(st):
     We do this by first merging, then looking for duplicate waveformStreamIDs."""
     st = st.merge()
     trlist_data = [tr.id for tr in st]
-    rep_ids = [trid for trid, nrep in Counter(trlist_data).items()
+    rep_ids = [trid for trid, nrep in list(Counter(trlist_data).items())
                if nrep > 1]
     st = Stream(tr for tr in st if tr.id not in rep_ids)
     return st

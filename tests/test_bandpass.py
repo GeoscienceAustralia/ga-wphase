@@ -20,7 +20,7 @@ def read_case(casedir):
 
 TOLERANCE_FACTOR = 1e-4
 
-@pytest.mark.parametrize('params,before,after', map(read_case, CASEDIRS))
+@pytest.mark.parametrize('params,before,after', [read_case(d) for d in CASEDIRS])
 def test_scipy_produces_same_results(params, before, after):
     """We replaced a fortran implementation of a second-order-section band-pass
     filter with scipy's sos_filt. This test is to ensure that the two

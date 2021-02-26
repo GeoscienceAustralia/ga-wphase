@@ -1,8 +1,8 @@
+from future import standard_library
+standard_library.install_aliases()
+from builtins import str
 import os
-try:
-    from urllib.request import urlretrieve
-except ImportError:
-    from urllib import urlretrieve
+from urllib.request import urlretrieve
 
 import numpy.testing
 from obspy.core import UTCDateTime

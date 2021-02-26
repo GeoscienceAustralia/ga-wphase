@@ -1,6 +1,10 @@
+from __future__ import print_function
+from future import standard_library
+standard_library.install_aliases()
+from builtins import str
 import sys, os, traceback
-import cPickle as pickle
-from itertools import izip
+import pickle
+
 
 from obspy.core.utcdatetime import UTCDateTime
 from obspy.clients.fdsn import Client
@@ -174,10 +178,10 @@ def runwphase(
 
     if not metadata:
         raise Exception('no metadata available for: \n{}'.format(
-            '\n\t'.join('{}: {}'.format(*kv) for kv in eqinfo.iteritems())))
+            '\n\t'.join('{}: {}'.format(*kv) for kv in eqinfo.items())))
 
     if pickle_inputs:
-        with open(os.path.join(output_dir, 'inv.pkl'), 'w') as inv_out:
+        with open(os.path.join(output_dir, 'inv.pkl'), 'wb') as inv_out:
             pickle.dump(metadata, inv_out)
 
     wphase_output = OutputDict()
@@ -200,13 +204,13 @@ def runwphase(
         if use_only_z_components:
             streams = streams.select(component = 'Z')
 
-            print '{} traces remaining after restricting to Z'.format(len(streams))
+            print('{} traces remaining after restricting to Z'.format(len(streams)))
 
         meta_t_p.update(meta_t_p_)
 
         if pickle_inputs:
             streams_pickle_file = os.path.join(output_dir, 'streams.pkl')
-            with open(streams_pickle_file, 'w') as pkle:
+            with open(streams_pickle_file, 'wb') as pkle:
                 pickle.dump((meta_t_p, streams), pkle)
 
         # do and post-process the inversion
@@ -229,9 +233,9 @@ def runwphase(
                 metadata = meta_t_p,
                 make_maps=make_maps)
 
-    except WPInvWarning, e:
+    except WPInvWarning as e:
         wphase_output.add_warning(str(e))
-    except Exception, e:
+    except Exception as e:
         wphase_output[settings.WPHASE_ERROR_KEY] = str(e)
         wphase_output[settings.WPHASE_ERROR_STACKTRACE_KEY] = "".join(traceback.format_exception(*sys.exc_info()))
 

@@ -1,6 +1,9 @@
+from future import standard_library
+standard_library.install_aliases()
+from builtins import str
 import os
 import json
-import urllib
+import urllib.request, urllib.parse, urllib.error
 from email.Utils import formatdate
 from email.mime.text import MIMEText
 import boto3
@@ -87,7 +90,7 @@ def send_email_via_ses(
         'bucket_name': bucket_name}
 
     # the full url to the page
-    url = WPHASE_WEB_BASE_PATH + 'index.html?' + urllib.urlencode(all_args)
+    url = WPHASE_WEB_BASE_PATH + 'index.html?' + urllib.parse.urlencode(all_args)
 
     # create the message (just a link to the page to view)
     msg = MIMEText(u'<a href="{}">Go to result</a>'.format(url), 'html')

@@ -4,14 +4,14 @@ try:
 except ImportError:
     from urllib import urlretrieve
 
-import numpy as np
+import numpy.testing
 from obspy.core import UTCDateTime
 import obspy
 
 from wphase import runwphase
 
-def close(a, b):
-    return np.isclose(a, b, rtol=1e-3)
+def assert_allclose(a, b):
+    numpy.testing.assert_allclose(a, b, rtol=1e-3)
 
 DIR = os.path.join(os.path.dirname(__file__), 'temp')
 
@@ -43,23 +43,23 @@ def test_ga2016rhegtj_from_fixed_datasets(tmpdir):
                   output_dir=str(tmpdir), output_dir_can_exist=True,
                   waveforms=waveforms, inventory=inventory)
     assert 'MomentTensor' in r
+
     MT = r['MomentTensor']
     assert MT['drmagt'] == 'Mww'
 
-    expected = {
-        'drlat': -37.028000000000013,
-        'drlon': 178.95500000000004,
-        'drmag': 7.076100455160292,
-        'drdepth': 30.5,
-        'tmtp': 1.23520733106147e+19,
-        'tmtt': -7.590380797061462e+18,
-        'tmrt': 1.7999111784412908e+19,
-        'tmrr': -1.8604474993078469e+19,
-        'tmrp': 4.0737340823329858e+19,
-        'tmpp': 2.6194855790139933e+19
-    }
-    for k, v in expected.items():
-        assert close(MT[k], v)
+    expected = (
+        ('drlat', -37.028),
+        ('drlon', 178.955),
+        ('drmag', 7.07610),
+        ('drdepth', 30.5),
+        ('tmtp', 1.157025e+19),
+        ('tmtt', -6.652347e+18),
+        ('tmrt', 2.284425e+19),
+        ('tmrr', -1.927443e+19),
+        ('tmrp', 3.794774e+19),
+        ('tmpp', 2.592678e+19),
+    )
+    assert_allclose([v for k, v in expected], [MT[k] for k, v in expected])
 
 def test_ga2016rhegtj_with_iris_fdsn(tmpdir):
     # We run the test with IRIS, but don't validate the exact results.

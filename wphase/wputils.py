@@ -1,3 +1,8 @@
+from future import standard_library
+standard_library.install_aliases()
+from builtins import str
+from builtins import range
+from builtins import object
 import os
 import numpy as np
 from collections import defaultdict
@@ -79,7 +84,7 @@ if settings.PROFILE_WPHASE:
                         timings_file.write(self.profiler.output_html())
 
     except Exception:
-        import cProfile, pstats, StringIO
+        import cProfile, pstats, io
         class WPInvProfiler(object):
             def __init__(self, wphase_output, *args, **kwargs):
                 self.wphase_output = wphase_output
@@ -91,7 +96,7 @@ if settings.PROFILE_WPHASE:
 
             def __exit__(self, exc_type, esc_value, traceback):
                 self.profiler.disable()
-                s = StringIO.StringIO()
+                s = io.StringIO()
                 ps = pstats.Stats(self.profiler, stream=s).sort_stats(self.sort_by)
                 ps.print_stats()
                 self.wphase_output[settings.WPINV_PROFILE_OUTPUT_KEY] = {
@@ -121,7 +126,7 @@ class OutputDict(defaultdict):
         def _recurse(d):
             if isinstance(d, dict) and not isinstance(d, OutputDict):
                 res = OutputDict()
-                for k, v in d.iteritems():
+                for k, v in d.items():
                     super(OutputDict, res).__setitem__(k, _recurse(v))
                 return res
             elif isinstance(d, np.ndarray):
@@ -144,7 +149,7 @@ class OutputDict(defaultdict):
 
     def as_dict(self, item=None):
         if item is None:
-            return {k: None if v is None else self.as_dict(v) for k, v in self.iteritems()}
+            return {k: None if v is None else self.as_dict(v) for k, v in self.items()}
         if isinstance(item, OutputDict):
             return item.as_dict()
         return item
@@ -431,8 +436,8 @@ def post_process_wpinv(
             lats, lons, depths = coords[:,:].T
             depths_unique  = sorted(set(depths))
             N_depths = len(depths_unique)
-            misfits_depth_mat = np.zeros((N_grid/N_depths,N_depths))
-            latlon_depth_mat = np.zeros((N_grid/N_depths,2,N_depths))
+            misfits_depth_mat = np.zeros((int(N_grid/N_depths),N_depths))
+            latlon_depth_mat = np.zeros((int(N_grid/N_depths),2,N_depths))
             ##We will sum the misfits over the depths
             for i_col,depth in enumerate(depths_unique):
                 i_depth = np.where(depths == depth)

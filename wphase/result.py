@@ -1,8 +1,10 @@
+from builtins import str
+from builtins import object
 from datetime import datetime
 import json
 
 SC3_TIME_FORMAT="%F %T.%f"
-class FMItem:
+class FMItem(object):
     """Represents the focal mechanism resulting from a w-phase run in python-native types.""" 
     def __init__(self):
         self.dip1 = None
@@ -110,7 +112,7 @@ class WPhaseParser(object):
                 except Exception:
                     log('could not get misfit')
 
-                item.centroid = json_data.has_key("Centroid")
+                item.centroid = "Centroid" in json_data
 
                 log("parsed file %s successfully" % filename)
 

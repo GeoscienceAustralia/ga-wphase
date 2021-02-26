@@ -1,8 +1,13 @@
 ''' This module contains useful fuctions to handle seismic data
     with obspy
 '''
+from __future__ import print_function
+from __future__ import absolute_import
 
-import urllib2, sys
+from future import standard_library
+standard_library.install_aliases()
+from builtins import range
+import urllib.request, urllib.error, urllib.parse, sys
 import math as mat
 import numpy as np
 
@@ -16,7 +21,7 @@ try:
 except ImportError:
     from obspy.core.util.geodetics import gps2DistAzimuth as gps2dist_azimuth
 
-import datautils as DU
+from . import datautils as DU
 
 def getMetadataFromSeed(sp, trid, datetime=None):
     '''
@@ -108,12 +113,12 @@ def hypo2dist(hyploc1,hyploc2,r=6371.):
 
 
 
-def AzimuthalGap(META,trlist, (eplat,eplon)):
+def AzimuthalGap(META,trlist, location):
     '''
     Return the maximun Azimuthal Gap given metadata dict, list of
     station ids and location of the epicentre.
     '''
-
+    (eplat,eplon) = location
     if len(trlist) < 2:
         return 359.999, []
     azis = np.empty(len(trlist) + 1)
@@ -146,7 +151,7 @@ def GetVirtualNetworkStations(VN):
 
     url = "http://service.iris.edu/irisws/virtualnetwork/1/query?code=_" + VN +"&format=CSV"
     #url = "http://www.iris.edu/vnets?vnet=_" + VN +"&vout=CSV"
-    lines = urllib2.urlopen(url).read().split("\n")
+    lines = urllib.request.urlopen(url).read().split("\n")
     stations = []
     for line in lines:
         if line.startswith('_'):
@@ -167,7 +172,7 @@ def resample_Ntraces(Ntraces, DecFac):
     res = 0.
     new_val = Ntraces[0]
     if np.any(np.array(Ntraces) <= DecFac):
-        print "At least one trace is smaller that the Decimation Factor"
+        print("At least one trace is smaller that the Decimation Factor")
     for i in range(len(Ntraces)):
         if not i == 0:
             res = round((mat.ceil(new_val/DecFac)
@@ -192,7 +197,7 @@ def rot_12_NE(st, META):
             tr2 = st.select(id=id2)[0]
         except IndexError:
             st.remove(tr)
-            print tr.id, "Channel 2 not found. Impossible to rotate"
+            print(tr.id, "Channel 2 not found. Impossible to rotate")
             continue
         timeA = max(tr1.stats.starttime,tr2.stats.starttime)
         timeB = min(tr1.stats.endtime,tr2.stats.endtime)

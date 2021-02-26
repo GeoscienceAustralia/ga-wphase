@@ -12,8 +12,20 @@ except Exception:
 import os
 import json
 
+import numpy as np
+
 from wphase import settings
 from wphase._runner_fdsn import runwphase as wphase_runner
+
+def jsonencode_np(obj):
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
 
 def runwphase(
     output_dir,
@@ -63,7 +75,7 @@ def runwphase(
 
     # save the results
     with open(os.path.join(output_dir, settings.WPHASE_OUTPUT_FILE_NAME), 'w') as out:
-        json.dump(wphase_results, out)
+        json.dump(wphase_results, out, default=jsonencode_np)
 
     # re-raise any errors from the dark side
     if settings.WPHASE_ERROR_KEY in wphase_results:

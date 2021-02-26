@@ -11,10 +11,14 @@ warning* by Kanamori and Rivera, 2008](https://doi.org/10.1111/j.1365-246X.2008.
 
 ## Requirements
 
-- Python 2.7 (with various libraries)
+- Python 2.7 (with various libraries from PyPI).
+  - Python 3 is now also tentatively supported.
 - Green's functions (see the section below)
-- Optional: SeisComP3 with python libraries (to use the CLI script to push
-  results into a SeisComP3 system)
+- Optional:
+  - SeisComP3 with python libraries (to use the CLI script to push results into
+    a SeisComP3 system/convert results to SCML)
+  - The basemap matplotlib toolkit (to plot maps showing station distribution
+    and illustrating the grid search)
 
 
 ## Green's Functions
@@ -58,13 +62,21 @@ The rest of the python dependencies can be installed automatically from PyPI.
 From the same directory as this README lives in:
 
 ```sh
-sudo pip install .
+pip install .
 ```
 
 If you want to use it 'in place', use develop mode:
 
 ```sh
-sudo pip install -e .
+pip install -e .
+```
+
+If obspy has issues installing, you might need to install numpy first:
+
+```sh
+pip install wheel
+pip install numpy
+pip install .
 ```
 
 ## Running wphase

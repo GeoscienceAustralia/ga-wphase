@@ -45,5 +45,13 @@ setup(
             'wphase/psi/ttimes_subrout.f',
             'wphase/psi/libtau.f'])
     ],
-    install_requires = ['numpy', 'pytest', 'obspy', 'matplotlib', 'scipy>=0.16.0', 'pyinstrument==0.13.1']
+    install_requires = [
+        'h5py',
+        'matplotlib',
+        'numpy',
+        'obspy',
+        'pyinstrument==0.13.1',
+        'pytest',
+        'scipy>=0.16.0',
+    ]
     )

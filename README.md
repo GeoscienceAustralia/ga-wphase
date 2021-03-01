@@ -210,10 +210,11 @@ You can get a full list of options by invoking `run-wphase` with `--help`.
 I extracted this code from our private repository and ran a quick clean-up
 pass, but many more improvements are possible:
 
-- Migrate to Python 3 and add SeisComP 4+ support to [scripts/wphase](scripts/wphase).
+- Add SeisComP 4+ support to [scripts/wphase](scripts/wphase).
+- Replace various print() calls with proper logging.
 - Improve the Python API to return the results (focal mech,
   derived origin, etc) in ObsPy or SeisComP data structures instead of the
-  current nested dictionaries.
+  current nested dictionaries?
 - Migrate from basemap to cartopy.
 - Look into replacing the libtau fortran code with obspy's travel time model.
     - When this code was first developed, apparently the latter was too slow; but

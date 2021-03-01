@@ -223,7 +223,8 @@ def post_process_wpinv(
     working_dir,
     eqinfo,
     metadata,
-    make_maps=True):
+    make_maps=True,
+    make_plots=True):
 
     # if we could not do OL3, resort to OL2
     if WPOL == 3 and 'OL3' not in wphase_output:
@@ -244,15 +245,16 @@ def post_process_wpinv(
         else:   # original "GA" versions
             M, obs, syn, trlist, Ntrace, cenloc = res
 
-        try:
-            # Display the beachball for OL2
-            beachBallPrefix = os.path.join(
-                working_dir,
-                settings.WPHASE_BEACHBALL_PREFIX)
-            plot_beachball(M_OL2, width=400,
-                outfile = beachBallPrefix + "_OL2.png", format='png')
-        except Exception:
-            wphase_output.add_warning("Failed to create beachball for OL2.")
+        if make_plots:
+            try:
+                # Display the beachball for OL2
+                beachBallPrefix = os.path.join(
+                    working_dir,
+                    settings.WPHASE_BEACHBALL_PREFIX)
+                plot_beachball(M_OL2, width=400,
+                    outfile = beachBallPrefix + "_OL2.png", format='png')
+            except Exception:
+                wphase_output.add_warning("Failed to create beachball for OL2.")
 
     if 'OL2' in wphase_output:
         wphase_output['OL2'].pop('M', None)
@@ -265,15 +267,16 @@ def post_process_wpinv(
         trid.split('.')[1] for trid in trlist))
     wphase_output['QualityParams']['number_of_channels'] = len(trlist)
 
-    try:
-        # Display the beachball for the output level achieved
-        beachBallPrefix = os.path.join(working_dir, "{}_OL{}".format(
-            settings.WPHASE_BEACHBALL_PREFIX, WPOL))
-        plot_beachball(M, width=400,
-            outfile = beachBallPrefix + ".png", format='png')
-    except Exception:
-        wphase_output.add_warning("Failed to create beachball for OL{}.".format(
-            WPOL))
+    if make_plots:
+        try:
+            # Display the beachball for the output level achieved
+            beachBallPrefix = os.path.join(working_dir, "{}_OL{}".format(
+                settings.WPHASE_BEACHBALL_PREFIX, WPOL))
+            plot_beachball(M, width=400,
+                outfile = beachBallPrefix + ".png", format='png')
+        except Exception:
+            wphase_output.add_warning("Failed to create beachball for OL{}.".format(
+                WPOL))
 
     if make_maps:
         try:
@@ -294,7 +297,7 @@ def post_process_wpinv(
         except Exception:
             wphase_output.add_warning("Failed to create station distribtuion plot.")
 
-    if len(trlist):
+    if make_plots and len(trlist):
         # Secondly the wphase traces plot, syn Vs obs
         class PlotContext(object):
             """
@@ -414,7 +417,7 @@ def post_process_wpinv(
             obs,
             len(trlist))
 
-    else:
+    elif make_plots:
         wphase_output.add_warning('Could not create wphase results plot.')
 
     if WPOL==3:

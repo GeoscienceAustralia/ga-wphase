@@ -1,7 +1,8 @@
+import gzip
 import os
-from gzip import GzipFile
 from shutil import copyfileobj
-from urllib.request import urlopen
+from urllib.request import urlretrieve
+from tempfile import NamedTemporaryFile
 
 import obspy
 from obspy.core import UTCDateTime
@@ -11,10 +12,11 @@ DIR = os.path.join(os.path.dirname(__file__), 'temp')
 
 def gunzip_url(url, dest):
     """Equivalent of ``curl url | zcat > dest``"""
-    response = urlopen(url)
-    with open(dest, "wb") as out:
-        unzipper = GzipFile(fileobj=response)
-        copyfileobj(unzipper, out)
+    with NamedTemporaryFile() as tmp:
+        urlretrieve(url, tmp.name)
+        tmp.flush()
+        with gzip.open(tmp.name) as unzipper, open(dest, "wb") as out:
+            copyfileobj(unzipper, out)
 
 
 def get_dataset(eqinfo):

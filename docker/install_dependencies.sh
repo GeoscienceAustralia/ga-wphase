@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 #-------------------------------------------------------------------------------
 # update system and install standard stuff
 #-------------------------------------------------------------------------------
@@ -8,8 +10,15 @@ yum group install -y "Development Tools"
 yum install -y curl python-devel.x86_64 python-setuptools tkinter
 yum clean all
 
+# get python major version
+v="$(python --version 2>&1)"
+v="${v#Python }"
+v="${v:0:1}"
 # install pip
-curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+[ "$v" == 2 ] \
+    && url=https://bootstrap.pypa.io/pip/2.7/get-pip.py \
+    || url=https://bootstrap.pypa.io/get-pip.py
+curl -o get-pip.py $url
 python get-pip.py
 rm get-pip.py
 

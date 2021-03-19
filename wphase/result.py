@@ -3,7 +3,7 @@ from builtins import object
 from datetime import datetime
 import json
 
-SC3_TIME_FORMAT="%F %T.%f"
+SC3_TIME_FORMAT="%Y-%m-%d %H:%M:%S.%f"
 class FMItem(object):
     """Represents the focal mechanism resulting from a w-phase run in python-native types.""" 
     def __init__(self):

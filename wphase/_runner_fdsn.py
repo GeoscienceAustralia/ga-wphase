@@ -14,6 +14,7 @@ from wphase.psi.core import wpinv, WPInvWarning
 
 import wphase.settings as settings
 from wphase.wputils import OutputDict, WPInvProfiler, post_process_wpinv
+from wphase import logger
 
 
 
@@ -36,6 +37,7 @@ def load_metadata(
         very rough (within the week would probably be equally sensible).
     """
     if inventory:
+        logger.info('Building metadata from provided inventory')
         return Build_metadata_dict(inventory)
 
     def caller_maker(depth=0, **kwargs):
@@ -59,6 +61,7 @@ def load_metadata(
             args.update(kwargs)
             return client.get_stations(**args)
 
+        logger.info('Retrieving metadata from server %s', client.base_url)
         if depth == 0:
             def caller():
                 return make_call()
@@ -205,7 +208,7 @@ def runwphase(
         if use_only_z_components:
             streams = streams.select(component = 'Z')
 
-            print('{} traces remaining after restricting to Z'.format(len(streams)))
+            logger.info('{} traces remaining after restricting to Z'.format(len(streams)))
 
         meta_t_p.update(meta_t_p_)
 

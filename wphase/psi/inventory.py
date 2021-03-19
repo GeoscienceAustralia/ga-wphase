@@ -20,6 +20,7 @@ except ImportError:
 from wphase.psi.taup_fortran import getPtime
 import wphase.psi.seismoutils as SU
 from wphase.psi.decimate import decimateTo1Hz, CannotDecimate
+from wphase import logger
 
 def Build_metadata_dict(
         inv,
@@ -210,11 +211,11 @@ def GetData(
 
     if waveforms:
         # waveforms provided as input, just clean them
-        print('{} traces provided as input'.format(len(waveforms)))
+        logger.info('{} traces provided as input'.format(len(waveforms)))
         st = waveforms
     else:
         # fetch waveforms from server
-        print('fetching data from {}'.format(client.base_url))
+        logger.info('fetching data from {}'.format(client.base_url))
         st = Stream()
 
         # Create the subsets for each request
@@ -233,13 +234,12 @@ def GetData(
             try:
                 st += client.get_waveforms_bulk(chunk)
             except Exception as e:
-                print('Problem with request from server: {}'.format(client.base_url))
-                print(e)
+                logger.error('Problem with request from server: {}\n{}'.format(client.base_url, str(e)))
                 continue
 
     # Removing gappy traces (that is channel ids that are repeated)
     st = remove_gappy_traces(st)
-    print('{} traces remaining after throwing out gappy ones'.format(len(st)))
+    logger.info('{} traces remaining after throwing out gappy ones'.format(len(st)))
 
     # Decimating BH channels. This can be done in parallel.
     if decimate:
@@ -248,7 +248,7 @@ def GetData(
             try:
                 decimateTo1Hz(tr)
             except CannotDecimate as e:
-                print("Removing trace {} - {}".format(tr.id, e))
+                logger.info("Removing trace {} - {}".format(tr.id, e))
                 st.remove(tr)
 
         # Creating contigous arrays for the traces. This may speed up things later.

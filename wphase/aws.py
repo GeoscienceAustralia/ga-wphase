@@ -1,14 +1,17 @@
 from future import standard_library
 standard_library.install_aliases()
 from builtins import str
-import os
+
 import json
-import urllib.request, urllib.parse, urllib.error
-from email.Utils import formatdate
+import os
+import urllib.error
+import urllib.parse
+import urllib.request
 from email.mime.text import MIMEText
+from email.Utils import formatdate
+
 import boto3
 
-WPHASE_WEB_BASE_PATH = 'https://s3-ap-southeast-2.amazonaws.com/wphase.gagempa.net/web/'
 
 def write_to_s3(
         output_dir,
@@ -50,11 +53,8 @@ def write_to_s3(
 
 def send_email_via_ses(
         email_address,
-        bucket_name,
-        event_id,
-        result_id,
-        eatws_env,
-        call_succeeded,
+        subject,
+        message,
         email_aws_region = 'us-west-2',
         from_email=None):
 
@@ -82,27 +82,14 @@ def send_email_via_ses(
 
     client = boto3.client('ses', region_name=email_aws_region)
 
-    # all arguments to pass to the link
-    all_args = {
-        'success': 'true' if call_succeeded else 'false',
-        'event_id': event_id,
-        'result_id': result_id,
-        'bucket_name': bucket_name}
-
-    # the full url to the page
-    url = WPHASE_WEB_BASE_PATH + 'index.html?' + urllib.parse.urlencode(all_args)
-
-    # create the message (just a link to the page to view)
-    msg = MIMEText(u'<a href="{}">Go to result</a>'.format(url), 'html')
+    # create the message
+    msg = MIMEText(message, 'html')
 
     # add headers
     msg["From"] = from_email
     msg["To"] = ','.join(emails)
     msg["Date"] = str(formatdate(localtime=True))
-    msg["Subject"] = '{}W-Phase result {} ({})'.format(
-        '[TEST] ' if eatws_env.lower() != 'prod' else '',
-        event_id,
-        result_id)
+    msg["Subject"] = subject
 
     # send the email.
     client.send_raw_email(

@@ -64,8 +64,6 @@ COPY docker/configure_wphase_image.sh "$LOCAL_INSTALL_FOLDER"/configure_wphase_i
 # Dev image with auto-installation, to be used with run-or-build-container.sh
 FROM base AS dev
 ARG LOCAL_INSTALL_FOLDER=/tmp
-#ARG WPHASE_HOME=/wphase/app
-#ENV WPHASE_HOME="$WPHASE_HOME"
 RUN "$LOCAL_INSTALL_FOLDER"/configure_wphase_image.sh dev
 
 ##############################

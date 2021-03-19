@@ -69,14 +69,14 @@ elif [ "$mode" == "run" ]; then
         "$DEV_CONTAINER_NAME" \
         $cmd
 elif [ "$mode" == "run-wphase" ]; then
-    mkdir outputs
+    mkdir -p /tmp/wphase-output
     docker run -it --rm \
         --mount type=bind,source=$HOME/wphase/greens,target="$WPHASE_GREENS_FUNCTIONS_DIR",readonly=true \
-        --mount type=bind,source=`pwd`/outputs,target="/outputs",readonly=false \
+        --mount type=bind,source=/tmp/wphase-output,target="/tmp/wphase-output",readonly=false \
         --network=host \
         -e "WPHASE_HOME=$WPHASE_HOME" \
         "$PROD_CONTAINER_NAME" \
-        --outputs outputs \
+        --outputs /tmp/wphase-output \
         $cmd
 else
     echo 'First argument must be either "build", "run" or "run-wphase".'

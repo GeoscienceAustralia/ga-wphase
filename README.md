@@ -211,7 +211,6 @@ I extracted this code from our private repository and ran a quick clean-up
 pass, but many more improvements are possible:
 
 - Add SeisComP 4+ support to [scripts/wphase](scripts/wphase).
-- Replace various print() calls with proper logging.
 - Improve the Python API to return the results (focal mech,
   derived origin, etc) in ObsPy or SeisComP data structures instead of the
   current nested dictionaries?

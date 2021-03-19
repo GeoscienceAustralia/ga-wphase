@@ -11,11 +11,6 @@ import matplotlib.colors as mcols
 from scipy.interpolate import griddata
 from obspy.imaging.beachball import beach
 
-try:
-    from mpl_toolkits.basemap import Basemap
-except ImportError:
-    print("Warning: mpl_toolkits not installed.")
-    pass
 
 def topography_colormap(cpool_sea,cpool_land):
     '''
@@ -240,6 +235,7 @@ def stacov(location,
     if not ax:
         ax = fig.add_subplot()
 
+    from mpl_toolkits.basemap import Basemap
     cov_map = Basemap(projection='ortho', lat_0=elat, lon_0=elon, resolution='c', area_thresh=10000., ax=ax)
 
     cov_map.fillcontinents(color='#FF9900', lake_color='#FF9900')

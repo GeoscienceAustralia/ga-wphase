@@ -32,6 +32,8 @@ try:
 except ImportError:
     from obspy.signal.invsim import paz2AmpValueOfFreqResp as paz_2_amplitude_value_of_freq_resp
 
+from wphase import logger
+
 _greens_function_dir = None
 _bpfunction = None
 _N_TASKS_PER_PROC = None
@@ -275,7 +277,7 @@ def wpinv(
     #We also want to select stations with one location code which is not the
     #default (see above).
 
-    print('initial number of traces: {}'.format(len(st_sel)))
+    logger.info('initial number of traces: {}'.format(len(st_sel)))
 
     # rotate the horizontal components to geographical north or east
     st_sel = rot_12_NE(st_sel, metadata)
@@ -331,14 +333,14 @@ def wpinv(
         elif trmeta['transfer_function'] == "A":
             AmpfromPAZ  = Vpaz2freq(trmeta,freq)
         else:
-            print("Unknown transfer function. Skipping", tr.id)
+            logger.warning("Unknown transfer function. Skipping %s", tr.id)
             trlist.remove(tr.id)
             continue
 
         # Fitting the instrument response and getting coefficients
         (om0, h, G) = getCOEFFfit(trmeta['sensitivity'],freq,AmpfromPAZ)
         if not np.all(np.isfinite([om0, h, G])):
-            print("Imposible to get Coeff. Skipping", tr.id)
+            logger.warning("Imposible to get Coeff. Skipping %s", tr.id)
             trlist.remove(tr.id)
             continue
 
@@ -350,7 +352,7 @@ def wpinv(
                 / np.linalg.norm(AmpfromPAZ)
 
         if misfit >  response_misfit_tol:
-            print('Bad fitting for response. Skipping:\n{}\t {: E}\n'.format(
+            logger.warning('Bad fitting for response. Skipping:\n{}\t {: E}\n'.format(
                     tr.id,
                     misfit))
             continue
@@ -371,14 +373,14 @@ def wpinv(
                 get_coef=True)
 
         except RTdeconvError as e:
-            print(str(e))
+            logger.warning("Error deconvolving trace %s: %s", tr.id, str(e))
             trlist.remove(tr.id)
             continue
 
         # trim to the Wphase time window
         tr.trim(t1,t2)
         if len(tr)== 0:
-            print("Empty trace. Skipping", tr.id)
+            logger.warning("Empty trace. Skipping %s", tr.id)
             trlist.remove(tr.id)
             continue
 
@@ -405,8 +407,8 @@ def wpinv(
     if len(accepted_traces) < N_st_min:
         raise WPInvWarning("Lack of stations. Aborting.")
 
-    print("Traces accepted for preliminary magnitude calculation: {}"
-          .format(len(accepted_traces)))
+    logger.info("Traces accepted for preliminary magnitude calculation: {}"
+                .format(len(accepted_traces)))
 
     # Get the preliminary mag:
     tr_p2p_con = [tr_p2p[i] for i in accepted_traces]
@@ -424,8 +426,8 @@ def wpinv(
         add_warning("Preliminary magnitude less than 6.5... setting it to 6.5 and continuing")
         pre_wp_mag = 6.5
 
-    print("OL1:")
-    print("Preliminary W-phase magnitude for the event:", np.round(pre_wp_mag, 7))
+    logger.info("OL1:")
+    logger.info("Preliminary W-phase magnitude for the event: %.7f", pre_wp_mag)
 
     output_dic['OL1'] = {}
     output_dic['OL1']['magnitude'] = round(pre_wp_mag,1)
@@ -486,13 +488,13 @@ def wpinv(
         elif trmeta['transfer_function'] == "A":
             AmpfromPAZ  = Vpaz2freq(trmeta,freq)
         else:
-            print("Unknown transfer function. Skipping", tr.id)
+            logger.warning("Unknown transfer function. Skipping %s", tr.id)
             trlist.remove(tr.id)
             continue
 
         (om0, h, G) = getCOEFFfit(trmeta['sensitivity'],freq,AmpfromPAZ)
         if not np.all(np.isfinite([om0, h, G])):
-            print("Imposible to get Coeff. Skipping", tr.id)
+            logger.warning("Impossible to get Coeff. Skipping %s", tr.id)
             trlist.remove(tr.id)
             continue
 
@@ -512,7 +514,7 @@ def wpinv(
                 get_coef = True)
 
         except RTdeconvError as e:
-            print(str(e))
+            logger.warning("Error deconvolving trace %s: %s", tr.id, str(e))
             trlist.remove(tr.id)
             continue
 
@@ -588,7 +590,7 @@ def wpinv(
     output_dic['misfits'] = {'min':mis_min, 'array':misfits}
     t_d = t_h = time_delays[mis_min]
     MRF = MomentRateFunction(t_h, dt)
-    print("Source time function, time delay:", len(MRF), t_d)
+    logger.info("Source time function, time delay: %d, %f", len(MRF), t_d)
 
     #### Removing individual bad fitting. this recursively removes stations with misfits
     # outside of the acceptable range defined by the variable misfit_tol, which was
@@ -622,7 +624,7 @@ def wpinv(
         if len(trlist) < minium_num_channels:
             output_dic.pop('OL1', None)
             msg = "Only {} channels with possibly acceptable fits. Aborting.".format(len(trlist))
-            print(msg)
+            logger.error(msg)
             raise WPInvWarning(msg)
 
         M, misfit, GFmatrix = core_inversion(
@@ -644,21 +646,21 @@ def wpinv(
            M[3]*GFmatrix[:,2] + M[4]*GFmatrix[:,3] +
            M[5]*GFmatrix[:,4])
 
-    print("OL2:")
-    print("Mrr: ", '{: e}'.format(M[0]))
-    print("Mtt: ", '{: e}'.format(M[1]))
-    print("Mpp: ", '{: e}'.format(M[2]))
-    print("Mrt: ", '{: e}'.format(M[3]))
-    print("Mrp: ", '{: e}'.format(M[4]))
-    print("Mtp: ", '{: e}'.format(M[5]))
+    logger.info("OL2:")
+    logger.info("Mrr: % e", M[0])
+    logger.info("Mtt: % e", M[1])
+    logger.info("Mpp: % e", M[2])
+    logger.info("Mrt: % e", M[3])
+    logger.info("Mrp: % e", M[4])
+    logger.info("Mtp: % e", M[5])
 
-    print("misfit: ", misfit)
+    logger.info("misfit: %.0f%%", misfit)
 
     M2 = M*M
     m0 = np.sqrt(0.5 * (M2[0] + M2[1] + M2[2]) + M2[3] + M2[4] + M2[5])
     mag = 2./3.*(np.log10(m0)-9.10)
-    print("m0: ", m0)
-    print("magnitude: ", mag)
+    logger.info("m0: % e", m0)
+    logger.info("magnitude: %.5f", mag)
 
     output_dic['OL2'] = {}
     output_dic['OL2']['Mrr']= M[0]
@@ -804,21 +806,21 @@ def wpinv(
           + M[5]*GFmatrix[:,4])
 
 
-    print("OL3:")
-    print("Mrr: ", '{: e}'.format(M[0]))
-    print("Mtt: ", '{: e}'.format(M[1]))
-    print("Mpp: ", '{: e}'.format(M[2]))
-    print("Mrt: ", '{: e}'.format(M[3]))
-    print("Mrp: ", '{: e}'.format(M[4]))
-    print("Mtp: ", '{: e}'.format(M[5]))
+    logger.info("OL3:")
+    logger.info("Mrr: % e", M[0])
+    logger.info("Mtt: % e", M[1])
+    logger.info("Mpp: % e", M[2])
+    logger.info("Mrt: % e", M[3])
+    logger.info("Mrp: % e", M[4])
+    logger.info("Mtp: % e", M[5])
 
-    print("misfit: ", misfit)
+    logger.info("misfit: %.0f%%", misfit)
 
     M2 = M*M
     m0 = np.sqrt(0.5*(M2[0]+M2[1]+M2[2])+M2[3]+M2[4]+M2[5])
     mag = 2./3.*(np.log10(m0)-9.10)
-    print("m0: ", m0)
-    print("magnitude: ", mag)
+    logger.info("m0: % e", m0)
+    logger.info("magnitude: %.5f", mag)
     cenloc = (cenlat,cenlon,cendep)
 
     # QZ
@@ -1299,7 +1301,7 @@ def core_inversion(t_h,t_d,cmtloc,orig, periods, MRF,
                 fillvec1 = data_[ 0] * np.ones(FirstValid)
                 fillvec2 = data_[-1] * np.ones(FirstValid)
             except Exception:
-                print(FirstValid)
+                logger.warning(FirstValid)
 
             data_ = np.concatenate((fillvec1, data_, fillvec2))
             mean = np.mean(data_[:60])
@@ -1521,7 +1523,7 @@ def rot_12_NE(st, META):
             tr2 = st.select(id=id2)[0]
         except IndexError:
             st.remove(tr)
-            print(tr.id, "Channel 2 not found. Impossible to rotate")
+            logger.warning("%s Channel 2 not found. Impossible to rotate", tr.id)
             continue
 
         timeA = max(tr1.stats.starttime,tr2.stats.starttime)

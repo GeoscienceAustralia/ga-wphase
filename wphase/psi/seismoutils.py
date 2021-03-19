@@ -11,6 +11,8 @@ import urllib.request, urllib.error, urllib.parse, sys
 import math as mat
 import numpy as np
 
+from wphase import logger
+
 try:
     from obspy.geodetics import locations2degrees
 except ImportError:
@@ -172,7 +174,7 @@ def resample_Ntraces(Ntraces, DecFac):
     res = 0.
     new_val = Ntraces[0]
     if np.any(np.array(Ntraces) <= DecFac):
-        print("At least one trace is smaller that the Decimation Factor")
+        logger.warning("At least one trace is smaller that the Decimation Factor")
     for i in range(len(Ntraces)):
         if not i == 0:
             res = round((mat.ceil(new_val/DecFac)
@@ -197,7 +199,7 @@ def rot_12_NE(st, META):
             tr2 = st.select(id=id2)[0]
         except IndexError:
             st.remove(tr)
-            print(tr.id, "Channel 2 not found. Impossible to rotate")
+            logger.warning(tr.id, "Channel 2 not found. Impossible to rotate")
             continue
         timeA = max(tr1.stats.starttime,tr2.stats.starttime)
         timeB = min(tr1.stats.endtime,tr2.stats.endtime)

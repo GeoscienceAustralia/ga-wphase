@@ -310,6 +310,7 @@ class WPhase(Application):
         parser = WPhaseParser(Logging.info)
 
         Logging.enableConsoleLogging(Logging.getGlobalChannel("error"))
+        wphase_failed = False
 
         if self.evid is not None:
             self.eqinfo['id'] = self.evid
@@ -326,6 +327,7 @@ class WPhase(Application):
             except Exception:
                 from traceback import format_exc
                 Logging.error('failed to run wphase: {}'.format(format_exc()))
+                wphase_failed = True
             else:
                 if self.evid is not None:
                     try:
@@ -410,7 +412,7 @@ class WPhase(Application):
                                email_aws_region=self.email_aws_region,
                                )
 
-        return False
+        sys.exit(1 if wphase_failed else 0)
 
     def createEmail(self, event_id, result_id, result_dict, call_succeeded):
         """Create email subject and body to notify result.

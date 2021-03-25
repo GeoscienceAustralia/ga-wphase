@@ -358,7 +358,7 @@ class WPhase(Application):
 
         if item is not None:
             try:
-                objs = createAndSendObjects(item, self.connection(), logging=Logging)
+                objs = createAndSendObjects(item, self.connection(), evid=self.evid, logging=Logging, agency=self.agency)
             except Exception as e:
                 Logging.error('failed create objects for SC3: {}'.format(e))
             else:

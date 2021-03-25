@@ -183,7 +183,7 @@ class WPhase(Application):
             "Input",
             "agency",
             "Agency code for SC3 output")
-        self.commandline().addStringOption(
+        self.commandline().addOption(
             "Input",
             "make-maps",
             "Whether to create map plots or not.")

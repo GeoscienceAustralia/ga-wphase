@@ -27,7 +27,7 @@ def SCNotifier():
         DM.Notifier.SetEnabled(wasEnabled)
 
 
-def createObjects(item, with_notifiers=False, logging=Logging):
+def createObjects(item, agency, evid=None, with_notifiers=False, logging=Logging):
     """Convert an FMItem to seiscomp3.DataModel objects, optionally sending
     Notifier events to messaging.
 
@@ -47,8 +47,8 @@ def createObjects(item, with_notifiers=False, logging=Logging):
     # create creation info
     ci = DM.CreationInfo()
     ci.setCreationTime(time)
-    ci.setAgencyID(self.agency)
-    ci.setAuthor(item.author)
+    ci.setAgencyID(agency)
+    ci.setAuthor(item.author.encode())
 
     originTime = DM.TimeQuantity(
         datetime_to_seiscomp(item.originTime)
@@ -82,7 +82,7 @@ def createObjects(item, with_notifiers=False, logging=Logging):
         mag.setMagnitude(DM.RealQuantity(item.mag))
         mag.setCreationInfo(ci)
         mag.setOriginID(derivedOrigin.publicID())
-        mag.setType(item.mag_type)
+        mag.setType(item.mag_type.encode())
         mag.setStationCount(item.usedStationCount)
         mag.setMethodID("wphase")
     except Exception as e:
@@ -156,15 +156,15 @@ def createObjects(item, with_notifiers=False, logging=Logging):
 
     fmRef = DM.FocalMechanismReference()
     fmRef.setFocalMechanismID(fm.publicID())
-    if with_notifiers:
+    if with_notifiers and evid:
         notifiers = [
             # TODO: are these two actually valid? Origins/FMs are associated to events
             # by references, but are not children thereof!
-            DM.Notifier.Create(self.evid, DM.OP_ADD, derivedOrigin),
-            DM.Notifier.Create(self.evid, DM.OP_ADD, fm),
+            DM.Notifier.Create(evid, DM.OP_ADD, derivedOrigin),
+            DM.Notifier.Create(evid, DM.OP_ADD, fm),
             # I *think* we only actually need these two.
-            DM.Notifier.Create(self.evid, DM.OP_ADD, oRef),
-            DM.Notifier.Create(self.evid, DM.OP_ADD, fmRef),
+            DM.Notifier.Create(evid, DM.OP_ADD, oRef),
+            DM.Notifier.Create(evid, DM.OP_ADD, fmRef),
         ]
 
     # Adding these seems to *immediately* queue up the notifications; so we
@@ -182,7 +182,7 @@ def createObjects(item, with_notifiers=False, logging=Logging):
         ret["notifiers"] = notifiers
     return ret
 
-def createAndSendObjects(item, connection, logging=Logging):
+def createAndSendObjects(item, connection, logging=Logging, **kwargs):
     """Convert the given FMItem to seiscomp3.DataModel objects, send them over
     the given connection, and return them.
 
@@ -191,7 +191,7 @@ def createAndSendObjects(item, connection, logging=Logging):
     :rtype: dict"""
     # create SeiscomP3 objects from focal mechanism item
     with SCNotifier():
-        ret = createObjects(item, with_notifiers=True, logging=logging)
+        ret = createObjects(item, with_notifiers=True, logging=logging, **kwargs)
 
     try:
         # serialize objects

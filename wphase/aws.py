@@ -2,13 +2,7 @@ from future import standard_library
 standard_library.install_aliases()
 from builtins import str
 
-import json
 import os
-import urllib.error
-import urllib.parse
-import urllib.request
-from email.mime.text import MIMEText
-from email.Utils import formatdate
 
 import boto3
 
@@ -52,46 +46,24 @@ def write_to_s3(
 
 
 def send_email_via_ses(
-        email_address,
-        subject,
-        message,
+        recipients,
+        mime_payload,
         email_aws_region = 'us-west-2',
-        from_email=None):
+        **kwargs
+        ):
 
     """
     Send an email using AWS SES.
 
-    :param str email_address: The email address to send the email to, OR a list
-        of such addresses.
+    :param list recipients: The email addresses to send the email to.
     :param str email_aws_region: The name of the region to use for sending the email.
         Note that SES is not available in all regions and that this will probably
         be different to the parameter *aws_region* in
         :py:func:`get_credentials`.
     """
-
-    if isinstance(email_address, list):
-        emails = email_address
-    else:
-        emails = [email_address]
-
-    if not emails:
-        return
-
-    if from_email is None:
-        from_email = emails[0] # TODO is this REALLY sensible?
-
     client = boto3.client('ses', region_name=email_aws_region)
-
-    # create the message
-    msg = MIMEText(message, 'html')
-
-    # add headers
-    msg["From"] = from_email
-    msg["To"] = ','.join(emails)
-    msg["Date"] = str(formatdate(localtime=True))
-    msg["Subject"] = subject
 
     # send the email.
     client.send_raw_email(
-        Destinations = emails,
-        RawMessage={'Data': msg.as_string()})
+        Destinations = recipients,
+        RawMessage={'Data': mime_payload.as_string()})

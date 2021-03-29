@@ -15,7 +15,6 @@ from seiscomp3 import DataModel as DM, Logging, IO, Core
 from seiscomp3.Client import Application
 
 from wphase import runwphase, settings
-from wphase.aws import write_to_s3
 from wphase.email import send_email
 from wphase.result import WPhaseParser, FMItem
 from wphase.seiscomp import createAndSendObjects, writeSCML
@@ -315,23 +314,14 @@ class WPhase(Application):
 
             if self.notificationemail is not None:
                 self.notificationemail = str(self.notificationemail).split(',')
-                if not self.write_s3:
-                    msg = 'requsted to send notification but not write to S3: will try and write to S3'
-                    Logging.warning(msg)
-                    self.write_s3 = True
-
-                if not self.fromemail:
-                    self.fromemail = self.notificationemail[0]
 
             if self.write_s3 and (
-                    write_to_s3 is None or \
                     self.evid is None or \
                     self.bucket_name is None):
-                Logging.error('attempt to write to s3, but no evid provided.')
+                Logging.error('attempt to write to s3, but did not provide evid and bucket name.')
                 return False
 
             if self.notificationemail is not None and (
-                    write_to_s3 is None or \
                     self.mag_type is None or \
                     self.mag_value is None or \
                     self.evid is None or \
@@ -428,6 +418,7 @@ class WPhase(Application):
             # at the very end since we keep the sc3 log file.
 
             try:
+                from wphase.aws import write_to_s3
                 write_to_s3(
                     self.output,
                     self.bucket_name,

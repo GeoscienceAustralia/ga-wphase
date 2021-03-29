@@ -1,4 +1,6 @@
 """Butterworth bandpass filtering"""
+from __future__ import absolute_import
+
 from scipy import signal
 from wphase import settings
 

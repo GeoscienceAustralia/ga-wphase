@@ -1,14 +1,13 @@
 ''' This module contains useful fuctions to handle seismic data
     with obspy
 '''
-from __future__ import print_function
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function
 
 from future import standard_library
 standard_library.install_aliases()
 from builtins import range
 import urllib.request, urllib.error, urllib.parse, sys
-import math as mat
+import math
 import numpy as np
 
 from wphase import logger
@@ -177,37 +176,12 @@ def resample_Ntraces(Ntraces, DecFac):
         logger.warning("At least one trace is smaller that the Decimation Factor")
     for i in range(len(Ntraces)):
         if not i == 0:
-            res = round((mat.ceil(new_val/DecFac)
+            res = round((math.ceil(new_val/DecFac)
                         - new_val/DecFac)*DecFac)
         new_val = Ntraces[i]-res
-        Ntraces_dec[i] = mat.ceil(new_val/DecFac)
+        Ntraces_dec[i] = math.ceil(new_val/DecFac)
     return Ntraces_dec
     ##
-
-def rot_12_NE(st, META):
-    '''
-    Performs a  12 -> NE rotation. META is a dictionary with the metadata
-    and st is a  stream.
-    '''
-
-    st2 = st.select(channel="??1")
-    for tr in st2:
-        id1 = tr.id
-        id2 = id1[:-1] + '2'
-        tr1 = tr
-        try:
-            tr2 = st.select(id=id2)[0]
-        except IndexError:
-            st.remove(tr)
-            logger.warning(tr.id, "Channel 2 not found. Impossible to rotate")
-            continue
-        timeA = max(tr1.stats.starttime,tr2.stats.starttime)
-        timeB = min(tr1.stats.endtime,tr2.stats.endtime)
-        tr1.trim(timeA,timeB)
-        tr2.trim(timeA,timeB)
-        azi = META[id1]['azimuth']
-        tr1.data, tr2.data = DU.Rot2D(tr1.data,tr2.data,-azi)
-    return st
 
 def station_pruning(META,trlist, cutoffs=[1.,2.,5], units='deg'):
     '''

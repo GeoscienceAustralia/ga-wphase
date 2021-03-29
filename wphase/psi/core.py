@@ -1,7 +1,5 @@
-'''
-Core functionality for performing the Wphase inversion.
-'''
-from __future__ import print_function
+"""Core implementation of the W-Phase inversion."""
+from __future__ import absolute_import, print_function
 
 from builtins import str
 from builtins import range

@@ -6,6 +6,8 @@ In order to install it you must go to wphase.psi and run:
 
 f2py -c _libtau.pyf ttimes_subrout.f libtau.f
 """
+from __future__ import absolute_import
+
 import os
 import wphase.psi._libtau as _libtau
 

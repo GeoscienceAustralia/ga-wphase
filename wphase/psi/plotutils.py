@@ -1,7 +1,7 @@
 '''
 Some utilities to make nice plots.
 '''
-from __future__ import print_function
+from __future__ import absolute_import, print_function
 
 from builtins import range
 import numpy as np

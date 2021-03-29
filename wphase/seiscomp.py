@@ -1,4 +1,5 @@
 """Methods to convert results to seiscomp formats."""
+from __future__ import absolute_import
 from contextlib import contextmanager
 from seiscomp3 import DataModel as DM, Core, IO
 from seiscomp3 import Logging

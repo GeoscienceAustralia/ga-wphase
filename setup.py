@@ -53,5 +53,8 @@ setup(
         'pyinstrument==0.13.1',
         'pytest',
         'scipy>=0.16.0',
-    ]
-    )
+    ],
+    extras_require = {
+        'aws': ['boto3']
+    }
+)

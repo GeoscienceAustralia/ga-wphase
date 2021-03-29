@@ -5,12 +5,12 @@ from email.mime.text import MIMEText
 from email.utils import formatdate
 from smtplib import SMTP, SMTP_SSL
 
-from wphase.aws import send_email_via_ses
 from wphase import logger
 
 def send_email(recipients, subject, message, from_email=None, method='ses', **kwargs):
     """Send a simple HTML email via either SES or SMTP."""
     if method == 'ses':
+        from wphase.aws import send_email_via_ses
         send = send_email_via_ses
     elif method == 'smtp':
         send = send_email_via_smtp

@@ -9,5 +9,5 @@ if [ "$1" == "dev" ]; then
     echo 'cd "$WPHASE_HOME" && pip install -e .' >> ~/.bashrc
 else
     # For the production container, we can do the build immediately.
-    cd "$WPHASE_HOME" && pip install -e .
+    cd "$WPHASE_HOME" && pip install -e .[aws]
 fi

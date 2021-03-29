@@ -72,6 +72,9 @@ class WPhase(Application):
         self.email_aws_region = None
         self.email_method = 'ses'
 
+        self.email_subject_postfix = ''
+        self.email_subject_prefix = ''
+
         self.smtp_server = None
         self.smtp_port = 25
         self.smtp_ssl = False
@@ -178,6 +181,14 @@ class WPhase(Application):
             "If using SES, AWS Region to send email notifications from.")
         self.commandline().addStringOption(
             "Input",
+            "email-subject-prefix",
+            "String to add to start of notification email subject.")
+        self.commandline().addStringOption(
+            "Input",
+            "email-subject-postfix",
+            "String to add to end of notification email subject.")
+        self.commandline().addStringOption(
+            "Input",
             "smtp-server",
             "SMTP server to use to send notification email.")
         self.commandline().addStringOption(
@@ -280,6 +291,8 @@ class WPhase(Application):
             getter('notificationemail')
             getter('emailmethod', 'email_method')
             getter('fromemail')
+            getter('email-subject-prefix', 'email_subject_prefix')
+            getter('email-subject-postfix', 'email_subject_postfix')
             getter('emailawsregion', 'email_aws_region', 'us-west-2')
             getter('writeS3', 'write_s3', False, lambda x: True)
             getter('bucketname', 'bucket_name')
@@ -442,7 +455,8 @@ class WPhase(Application):
                                              call_succeeded=success,
                                              )
             send_email(recipients=self.notificationemail,
-                       subject=subject,
+                       subject=self.email_subject_prefix + str(subject)
+                               + self.email_subject_postfix,
                        message=body,
                        from_email=self.fromemail,
                        method=self.email_method,

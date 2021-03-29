@@ -15,14 +15,10 @@ from seiscomp3 import DataModel as DM, Logging, IO, Core
 from seiscomp3.Client import Application
 
 from wphase import runwphase, settings
+from wphase.aws import write_to_s3
+from wphase.email import send_email
 from wphase.result import WPhaseParser, FMItem
 from wphase.seiscomp import createAndSendObjects, writeSCML
-
-try:
-    from wphase.aws import send_email_via_ses, write_to_s3
-except Exception:
-    send_email_via_ses = None
-    write_to_s3 = None
 
 
 # this is used in determining the name of the log file that this application
@@ -74,6 +70,15 @@ class WPhase(Application):
         self.notificationemail = None
         self.fromemail = None
         self.email_aws_region = None
+        self.email_method = 'ses'
+
+        self.smtp_server = None
+        self.smtp_port = 25
+        self.smtp_ssl = False
+        self.smtp_tls = False
+        self.smtp_user = None
+        self.smtp_password = None
+
         self.write_s3 = False
         self.bucket_name = None
         self.agency = 'GA'
@@ -165,12 +170,36 @@ class WPhase(Application):
             "Email address to send notification from.")
         self.commandline().addStringOption(
             "Input",
-            "emailawsregion",
-            "AWS Region to send email notifications from.")
+            "emailmethod",
+            "Method to use to send notification email (either ses or smtp)")
         self.commandline().addStringOption(
             "Input",
-            "eatwsenv",
-            "The EATWS environment this being called from (e.g. 'prod').")
+            "emailawsregion",
+            "If using SES, AWS Region to send email notifications from.")
+        self.commandline().addStringOption(
+            "Input",
+            "smtp-server",
+            "SMTP server to use to send notification email.")
+        self.commandline().addStringOption(
+            "Input",
+            "smtp-port",
+            "SMTP port.")
+        self.commandline().addStringOption(
+            "Input",
+            "smtp-user",
+            "SMTP username.")
+        self.commandline().addStringOption(
+            "Input",
+            "smtp-password",
+            "SMTP username.")
+        self.commandline().addOption(
+            "Input",
+            "smtp-ssl",
+            "Enable SSL for SMTP.")
+        self.commandline().addOption(
+            "Input",
+            "smtp-tls",
+            "Enable TLS for SMTP.")
         self.commandline().addStringOption(
             "Input",
             "writeS3",
@@ -249,6 +278,7 @@ class WPhase(Application):
             getter('evid')
             getter('resultid')
             getter('notificationemail')
+            getter('emailmethod', 'email_method')
             getter('fromemail')
             getter('emailawsregion', 'email_aws_region', 'us-west-2')
             getter('writeS3', 'write_s3', False, lambda x: True)
@@ -256,6 +286,13 @@ class WPhase(Application):
             getter('agency')
             getter('make-maps', 'make_maps', False, lambda x: True)
             getter('overwrite', 'overwrite', False, lambda x: True)
+
+            getter('smtp-server', 'smtp_server')
+            getter('smtp-port', 'smtp_port')
+            getter('smtp-user', 'smtp_user')
+            getter('smtp-password', 'smtp_password')
+            getter('smtp-ssl', 'smtp_ssl')
+            getter('smtp-tls', 'smtp_tls')
 
             if self.evid is not None:
                 self.output = os.path.join(self.output, self.evid)
@@ -282,7 +319,6 @@ class WPhase(Application):
 
             if self.notificationemail is not None and (
                     write_to_s3 is None or \
-                    send_email_via_ses is None or \
                     self.mag_type is None or \
                     self.mag_value is None or \
                     self.evid is None or \
@@ -358,7 +394,9 @@ class WPhase(Application):
 
         if item is not None:
             try:
-                objs = createAndSendObjects(item, self.connection(), evid=self.evid, logging=Logging, agency=self.agency)
+                objs = createAndSendObjects(item, self.connection(),
+                                            evid=self.evid, logging=Logging,
+                                            agency=self.agency)
             except Exception as e:
                 Logging.error('failed create objects for SC3: {}'.format(e))
             else:
@@ -400,17 +438,24 @@ class WPhase(Application):
             success = res is not None and 'MomentTensor' in res
             subject, body = self.createEmail(event_id=self.evid,
                                              result_id=self.resultid,
-                                             from_email=self.fromemail,
-                                             email_aws_region=self.email_aws_region,
-                                             call_succeeded=success,
                                              result_dict=res,
+                                             call_succeeded=success,
                                              )
-            send_email_via_ses(email_address=self.notificationemail,
-                               subject=subject,
-                               message=body,
-                               from_email=self.fromemail,
-                               email_aws_region=self.email_aws_region,
-                               )
+            send_email(recipients=self.notificationemail,
+                       subject=subject,
+                       message=body,
+                       from_email=self.fromemail,
+                       method=self.email_method,
+
+                       email_aws_region=self.email_aws_region,
+
+                       server=self.smtp_server,
+                       port=self.smtp_port,
+                       user=self.smtp_user,
+                       password=self.smtp_password,
+                       ssl=self.smtp_ssl,
+                       tls=self.smtp_tls,
+                       )
 
         sys.exit(1 if wphase_failed else 0)
 

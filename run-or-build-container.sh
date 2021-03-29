@@ -11,7 +11,7 @@
 
 mode="$1"
 shift
-cmd="$@"
+declare -a cmds=("$@")
 
 DEV_CONTAINER_NAME=wphase-dev
 PROD_CONTAINER_NAME=wphase
@@ -58,16 +58,18 @@ if [ "$mode" == "build" ]; then
     build prod $PROD_CONTAINER_NAME
 
 elif [ "$mode" == "run" ]; then
-    if [ "$cmd" != "" ]; then
-        cmd="bash -lc '$cmd'"
+    if [ "${#cmds[@]}" != 0 ]; then
+        cmd="${cmds[@]}"
+        cmds=(bash -lc "$cmd")
     fi
+    >&2 echo "command: '$cmd'"
     docker run -it --rm \
         --mount type=bind,source=$HOME/wphase/greens,target="$WPHASE_GREENS_FUNCTIONS_DIR",readonly=true \
         --mount type=bind,source=`pwd`,target="$WPHASE_HOME" \
         --network=host \
         -e "WPHASE_HOME=$WPHASE_HOME" \
         "$DEV_CONTAINER_NAME" \
-        $cmd
+        "${cmds[@]}"
 elif [ "$mode" == "run-wphase" ]; then
     mkdir -p /tmp/wphase-output
     docker run -it --rm \
@@ -77,7 +79,7 @@ elif [ "$mode" == "run-wphase" ]; then
         -e "WPHASE_HOME=$WPHASE_HOME" \
         "$PROD_CONTAINER_NAME" \
         --outputs /tmp/wphase-output \
-        $cmd
+        "${cmds[@]}"
 else
     echo 'First argument must be either "build", "run" or "run-wphase".'
 fi

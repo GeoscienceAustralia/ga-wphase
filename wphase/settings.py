@@ -9,6 +9,8 @@ directly as python variables, but eventually may be moved to an external file
 specific system.
 """
 
+from __future__ import absolute_import
+
 import os
 import sys
 import multiprocessing as mp

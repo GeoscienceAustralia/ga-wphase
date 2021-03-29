@@ -136,7 +136,7 @@ def runwphase(
         password=None,
         inventory=None,
         waveforms=None,
-        pickle_inputs=True,
+        pickle_inputs=False,
         make_maps=True,
         make_plots=True,
         **kwargs):

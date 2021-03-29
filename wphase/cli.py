@@ -253,6 +253,9 @@ class WPhase(Application):
             return False
 
         getter = self.processArg
+        def getflag(name, to=None):
+            getter(name, to=to, conv=lambda x: True)
+
 
         try:
             # If there is an unrecognized option it must be a JSON file
@@ -296,15 +299,15 @@ class WPhase(Application):
             getter('writeS3', 'write_s3', False, lambda x: True)
             getter('bucketname', 'bucket_name')
             getter('agency')
-            getter('make-maps', 'make_maps', False, lambda x: True)
-            getter('overwrite', 'overwrite', False, lambda x: True)
+            getflag('make-maps', 'make_maps')
+            getflag('overwrite', 'overwrite')
 
             getter('smtp-server', 'smtp_server')
             getter('smtp-port', 'smtp_port')
             getter('smtp-user', 'smtp_user')
             getter('smtp-password', 'smtp_password')
-            getter('smtp-ssl', 'smtp_ssl')
-            getter('smtp-tls', 'smtp_tls')
+            getflag('smtp-ssl', 'smtp_ssl')
+            getflag('smtp-tls', 'smtp_tls')
 
             if self.evid is not None:
                 self.output = os.path.join(self.output, self.evid)

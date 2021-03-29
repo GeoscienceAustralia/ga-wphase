@@ -62,7 +62,6 @@ elif [ "$mode" == "run" ]; then
         cmd="${cmds[@]}"
         cmds=(bash -lc "$cmd")
     fi
-    >&2 echo "command: '$cmd'"
     docker run -it --rm \
         --mount type=bind,source=$HOME/wphase/greens,target="$WPHASE_GREENS_FUNCTIONS_DIR",readonly=true \
         --mount type=bind,source=`pwd`,target="$WPHASE_HOME" \

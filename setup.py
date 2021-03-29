@@ -46,6 +46,7 @@ setup(
             'wphase/psi/libtau.f'])
     ],
     install_requires = [
+        'backports.functools_lru_cache; python_version < "3.0.0"',
         'h5py',
         'matplotlib',
         'numpy',

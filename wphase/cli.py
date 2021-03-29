@@ -472,7 +472,7 @@ class WPhase(Application):
 
         Override this in a subclass to produce a custom email."""
         subject = 'W-Phase succeeded' if call_succeeded else 'W-Phase failed'
-        body = "W-Phase inversion {} for {} results: {}".format(result_id, event_id, result_dict)
+        body = "<h2>W-Phase inversion {} for {} results:</h2> <pre>{}</pre>".format(result_id, event_id, json.dumps(result_dict))
         return subject, body
 
 

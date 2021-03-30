@@ -4,6 +4,7 @@ from __future__ import absolute_import, print_function
 from builtins import str
 from builtins import range
 import sys, os, glob, traceback
+from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import Pool
 from timeit import default_timer as timer
 import numpy as np
@@ -31,19 +32,7 @@ except ImportError:
     from obspy.signal.invsim import paz2AmpValueOfFreqResp as paz_2_amplitude_value_of_freq_resp
 
 from wphase import logger
-
-_greens_function_dir = None
-_bpfunction = None
-_N_TASKS_PER_PROC = None
-
-def poolInitialiser(gfdir):
-    """
-    Initialise a worker in the pool. This is only required on windows where
-    forking is not supported.
-    """
-
-    global _greens_function_dir
-    _greens_function_dir = gfdir
+from .greens import GreensFunctions
 
 class WPInvWarning(Exception):
     """
@@ -157,7 +146,7 @@ def wpinv(
             #. Time delay/Half duration of the source (secs).
             #. latitude-longitude grid used to find the optimal centroid
                 location
-            #. Inversion result for each grid point in inputs_latlon
+            #. Inversion result for each grid point in latlons
             #. Dictionary with relavant information about the data processing
                 so it can redone easily outside this function.
     '''
@@ -180,26 +169,13 @@ def wpinv(
             output_dic.add_warning(msg)
 
     # set the function to use for filtering the Wphase
-    global _bpfunction
     if bpf is None:
         from .bandpass import bandpassfilter
         def bpf(sta, data, length, delta, corners, npass, low, high):
             return bandpassfilter(data, delta, corners, low, high)
-    _bpfunction = bpf
 
     # set the directory where the greens functions live
-    global _greens_function_dir
-    gfdir = os.path.normpath(gfdir)
-    _greens_function_dir = gfdir #Directory of the Green Functions
-
-    # check if we are using an hdf version of the greens functions
-    if gfdir.split('.')[-1] == 'hdf5':
-        hdf5_flag = True
-        with h5py.File(gfdir , "r") as GFfile:
-            hdirs_hdf5 = [dep for dep in GFfile]
-    else:
-        hdf5_flag = False
-        hdirs_hdf5 = None
+    greens = GreensFunctions(gfdir)
 
     # used to reject a channel if the fitting of the instrument response is
     # greater than this.  see "Source inversion of W phase - speeding up
@@ -275,7 +251,7 @@ def wpinv(
     #We also want to select stations with one location code which is not the
     #default (see above).
 
-    logger.info('initial number of traces: {}'.format(len(st_sel)))
+    logger.info('Initial number of traces: using %d of %d', len(st_sel), len(st))
 
     # rotate the horizontal components to geographical north or east
     st_sel = rot_12_NE(st_sel, metadata)
@@ -363,6 +339,7 @@ def wpinv(
                 h,
                 G,
                 dt,
+                bpf=bpf,
                 corners=4,
                 baselinelen=60./dt,
                 taperlen=10.,
@@ -449,13 +426,7 @@ def wpinv(
     omega = freq*2.*np.pi
 
     # Build the Moment Rate Function (MRF):
-    if hdf5_flag:
-        with h5py.File(_greens_function_dir , "r") as GFfile:
-            dt = GFfile.attrs["dt"]
-    else:
-        dtDir = os.path.join(_greens_function_dir, "H003.5", "PP", "GF.0001.SY.LHZ.SAC")
-        dt = read(dtDir)[0].stats.delta
-
+    dt = greens.delta
     MRF = MomentRateFunction(t_h, dt)
 
     # Building a stream with the synthetics and the observed displacements vector
@@ -504,7 +475,9 @@ def wpinv(
                 om0,
                 h,
                 G,
-                dt,corners=4,
+                dt,
+                bpf=bpf,
+                corners=4,
                 baselinelen=60./dt,
                 taperlen= 10.,
                 fmin = 1./Tb,
@@ -553,8 +526,6 @@ def wpinv(
     # Search for the optimal t_d
     ##I need to test the optimal way to do this. map is taking too much time
 
-    pool=Pool(processes, poolInitialiser, (_greens_function_dir,), _N_TASKS_PER_PROC)
-
     # time delays for which we will run inversions (finally choosing the one with
     # lowest misfit)
     time_delays = np.arange(1., max_t_d)
@@ -572,16 +543,16 @@ def wpinv(
         Ntrace,
         metadata,
         trlist,
-        hdf5_flag,
+        greens=greens,
+        bpf=bpf,
         OnlyGetFullGF=True,
         Max_t_d=max_t_d,
-        hdirs_hdf5=hdirs_hdf5)
+    )
 
     # inputs for the TIME DELAY search
     inputs = [(t_d_test, GFmatrix, Ntrace, ObservedDisp, max_t_d) for t_d_test in time_delays]
-    misfits = pool.map(get_timedelay_misfit_wrapper,inputs)
-    pool.close()
-    pool.join()
+    with ProcessPoolExecutor() as pool:
+        misfits = list(pool.map(get_timedelay_misfit_wrapper,inputs))
 
     # Set t_d (time delay) and and t_h (half duration) to optimal values:
     mis_min =  np.array(misfits).argmin()
@@ -604,9 +575,9 @@ def wpinv(
         Ntrace,
         metadata,
         trlist,
-        hdf5_flag,
-        GFs=True,
-        hdirs_hdf5=hdirs_hdf5)
+        greens=greens,
+        bpf=bpf,
+        GFs=True)
 
     # Remove bad traces
     for tol in misfit_tol:
@@ -636,9 +607,10 @@ def wpinv(
             Ntrace,
             metadata,
             trlist,
-            hdf5_flag,
-            GFs=True,
-            hdirs_hdf5=hdirs_hdf5)
+            bpf=bpf,
+            greens=greens,
+            GFs=True
+        )
 
     syn = (M[0]*GFmatrix[:,0] + M[1]*GFmatrix[:,1] +
            M[3]*GFmatrix[:,2] + M[4]*GFmatrix[:,3] +
@@ -686,118 +658,45 @@ def wpinv(
     ###Moment Tensor based on grid search  ######################
     ###for the optimal centroid's location #####################
 
-    #~ deps_grid = get_depths_for_grid(hypdep)
-    #~ lat_grid, lon_grid = get_latlon_for_grid(hyplat,hyplon)
-    #~
-    #~ deps_grid = get_depths_for_grid(hypdep)
-    #~ lat_grid, lon_grid = get_latlon_for_grid(hyplat,hyplon,dist_lat = 3.0,
-                            #~ dist_lon = 3.0,delta = 0.4)
-    ##Testing shorcut:
-    ##latlon search
-    lat_grid, lon_grid = get_latlon_for_grid(hyplat,hyplon,dist_lat = 3.0,
-                                             dist_lon = 3.0,delta = 0.8)
-    #lat_grid = lat_grid[::2]
-    #lon_grid = lon_grid[::2]
-    pool=Pool(processes, poolInitialiser, (_greens_function_dir,), _N_TASKS_PER_PROC)
-    inputs_latlon = [(t_h,t_d,(hyplatg,hyplong,hypdep), orig, (Ta,Tb),
-              MRF, ObservedDisp, Ntrace, metadata, trlist, hdf5_flag,
-              {'residuals':False,'hdirs_hdf5':hdirs_hdf5})
-              for hyplatg in lat_grid
-              for hyplong in lon_grid]
-    latlon_search = pool.map(core_inversion_wrapper,inputs_latlon)
-    pool.close()
-    pool.join()
+    lat_grid, lon_grid = get_latlon_for_grid(hyplat, hyplon, dist_lat=3.0,
+                                             dist_lon=3.0, delta=0.8)
+    logger.debug("Grid size: %d * %d", len(lon_grid), len(lat_grid))
+    latlons = [(lat, lon) for lat in lat_grid for lon in lon_grid]
 
-    #latlon_search = map(core_inversion_wrapper,inputs_latlon)
-    misfits_latlon = np.array([latlon_search[i][1] for i in range(len(inputs_latlon))])
-    cenlat, cenlon = inputs_latlon[misfits_latlon.argsort()[0]][2][:2]
+    def try_latlon(coords):
+        lat, lon = coords
+        return core_inversion(t_h, t_d, (lat, lon, hypdep), orig, (Ta, Tb), MRF,
+                              ObservedDisp, Ntrace, metadata, trlist, greens, bpf,
+                              True, residuals=False)
+
+    #with ProcessPoolExecutor() as pool:
+    latlon_search = list(map(try_latlon, latlons))
+
+    misfits_latlon = np.array([latlon_search[i][1] for i in range(len(latlons))])
+    cenlat, cenlon = latlons[misfits_latlon.argmin()]
     moments = latlon_search  #Compatibility
 
-    if hdf5_flag:
-        deps_grid = get_depths_for_grid_hdf5(hypdep)
-    else:
-        deps_grid = get_depths_for_grid(hypdep)#[::2]
+    deps_grid = get_depths_for_grid(hypdep, greens)
+    logger.debug("Depth grid size: %d", len(deps_grid))
 
-    pool=Pool(processes, poolInitialiser, (_greens_function_dir,), _N_TASKS_PER_PROC)
-    inputs_dep = [(t_h,t_d,(cenlat,cenlon,hypdepg), orig, (Ta,Tb),
-              MRF, ObservedDisp, Ntrace, metadata, trlist, hdf5_flag,
-              {'residuals':False,'hdirs_hdf5':hdirs_hdf5})
-              for hypdepg in deps_grid]
+    def try_depth(depth):
+        return core_inversion(t_h, t_d, (cenlat, cenlon, depth), orig, (Ta,Tb),
+                              MRF, ObservedDisp, Ntrace, metadata, trlist, greens, bpf,
+                              True, residuals=False)
 
-    depth_search = pool.map(core_inversion_wrapper,inputs_dep)
-    pool.close()
-    pool.join()
+    with ProcessPoolExecutor() as pool:
+        depth_search = list(map(try_depth, deps_grid))
 
-    #depth_search = map(core_inversion_wrapper,inputs_dep)
-    misfits_depth = np.array([depth_search[i][1] for i in range(len(inputs_dep))])
-    cendep = deps_grid[misfits_depth.argsort()[0]]
+    misfits_depth = np.array([depth_search[i][1] for i in range(len(deps_grid))])
+    cendep = deps_grid[misfits_depth.argmin()]
 
-
-    #########old grid search
-    #~ deps_grid = get_depths_for_grid(hypdep)[::2]
-    #~ lat_grid, lon_grid = get_latlon_for_grid(hyplat,hyplon,dist_lat = 3.0,
-                            #~ dist_lon = 3.0,delta = 0.4)
-    #~ lat_grid = lat_grid[::2]
-    #~ lon_grid = lon_grid[::2]
-    #~
-    #~ pool=Pool(processes, poolInitialiser, (_greens_function_dir,), _N_TASKS_PER_PROC)
-    #~ inputs = [(t_h,t_d,(hyplatg,hyplong,hypdepg), orig, (Ta,Tb),
-              #~ MRF, ObservedDisp, Ntrace, metadata, trlist, {'residuals':False})
-              #~ for hypdepg in deps_grid
-              #~ for hyplatg in lat_grid
-              #~ for hyplong in lon_grid]
-            #~
-    #~ moments = pool.map(core_inversion_wrapper,inputs)
-    #~ misfits = [moments[i][1] for i in range(len(inputs))]
-    #~ min_misfit_args = np.array(misfits).argsort()[0:Nfinersearch]
-    #~ min_misfit_arg = np.array(misfits).argmin()
-    #~ ####Second (finer) gridsearch:
-    #~ global_min_misfit  = 10. # Initial Value, should be > 1.
-    #~ ## If Nfinersearch = 0 I will not do a finner grid search
-    #~ if len(min_misfit_args) == 0:
-        #~ cenlat = inputs[min_misfit_arg][2][0]
-        #~ cenlon = inputs[min_misfit_arg][2][1]
-        #~ cendep = inputs[min_misfit_arg][2][2]
-    #~ for min_misfit_arg in min_misfit_args:
-        #~ #### Redefining the hyp loc:
-        #~ hyplat = inputs[min_misfit_arg][2][0]
-        #~ hyplon = inputs[min_misfit_arg][2][1]
-        #~ hypdep = inputs[min_misfit_arg][2][2]
-        #~ print "Looking for an optimal centroid location close to:"
-        #~ print hyplat,hyplon,hypdep
-        #~
-        #~ lat_grid, lon_grid = get_latlon_for_grid(hyplat,hyplon, dist_lat = 0.3,
-                                #~ dist_lon = 0.3,delta = 0.1 )
-        #~ deps_grid = get_depths_for_grid(hypdep, length = 30)
-        #~ pool=Pool(processes, poolInitialiser, (_greens_function_dir,), _N_TASKS_PER_PROC)
-        #~ inputs_f = [(t_h,t_d,(hyplatg,hyplong,hypdepg), orig, (Ta,Tb),
-                #~ MRF, ObservedDisp, Ntrace, metadata, trlist, {'residuals':False})
-                #~ for hypdepg in deps_grid
-                #~ for hyplatg in lat_grid
-                #~ for hyplong in lon_grid]
-                #~
-        #~ moments = pool.map(core_inversion_wrapper,inputs_f)
-        #~ misfits = [moments[i][1] for i in range(len(inputs_f))]
-        #~ misfits = np.array(misfits)
-        #~ if misfits.min() < global_min_misfit:
-            #~ min_misfit_arg = misfits.argmin()
-            #~ cenlat = inputs_f[min_misfit_arg][2][0]
-            #~ cenlon = inputs_f[min_misfit_arg][2][1]
-            #~ cendep = inputs_f[min_misfit_arg][2][2]
-            #~ print "Found:", cenlat, cenlon, cendep
-            #~ global_min_misfit = misfits.min()
-        #~ else:
-            #~ cenlat = inputs[min_misfit_arg][2][0]
-            #~ cenlon = inputs[min_misfit_arg][2][1]
-            #~ cendep = inputs[min_misfit_arg][2][2]
-    ###############End old grid search
 
     ###Final inversion!!
 
-    M, misfit, GFmatrix = core_inversion(t_h,t_d,(cenlat,cenlon,cendep),
-                                orig, (Ta,Tb), MRF, ObservedDisp,
-                                 Ntrace, metadata, trlist, hdf5_flag,
-                                 GFs = True,hdirs_hdf5=hdirs_hdf5)
+    M, misfit, GFmatrix = core_inversion(t_h, t_d, (cenlat, cenlon, cendep),
+                                         orig, (Ta,Tb), MRF, ObservedDisp,
+                                         Ntrace, metadata, trlist, greens=greens, bpf=bpf,
+                                         GFs=True)
 
     syn = (M[0]*GFmatrix[:,0] + M[1]*GFmatrix[:,1]
           + M[3]*GFmatrix[:,2] + M[4]*GFmatrix[:,3]
@@ -841,7 +740,7 @@ def wpinv(
     print "****************   output_dic   *****************"
     '''
 
-    return M, ObservedDisp, syn, trlist, Ntrace, cenloc, t_d, inputs_latlon, moments, DATA_INFO
+    return M, ObservedDisp, syn, trlist, Ntrace, cenloc, t_d, latlons, moments, DATA_INFO
 
 
 def MomentRateFunction(t_h, dt):
@@ -977,6 +876,7 @@ def RTdeconv(
         h,
         G,
         dt,
+        bpf,
         corners = 4,
         baselinelen = 60.,
         taperlen = 10.,
@@ -1044,7 +944,7 @@ def RTdeconv(
     elif data_type == 'accel':
         accel = data
 
-    accel = _bpfunction(sta,accel,len(accel),dt ,corners , 1 , fmin,fmax)
+    accel = bpf(sta,accel,len(accel),dt ,corners , 1 , fmin,fmax)
 
     vel = np.zeros(len(data))
     vel[1:] = 0.5*dt*np.cumsum(accel[:-1]+accel[1:])
@@ -1147,10 +1047,12 @@ def MTrotationZ(azi, components):
     return [trRRsy_rot, trPPsy_rot,  trTTsy_rot, trTPsy_rot,trRTsy_rot, trRPsy_rot]
 
 
-def core_inversion(t_h,t_d,cmtloc,orig, periods, MRF,
-                      ObservedDisp, Ntrace, metadata, trlist,
-                      hdf5_flag, GFs = False, residuals = False,
-                      OnlyGetFullGF=False, Max_t_d = 200, hdirs_hdf5= None):
+def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
+                   ObservedDisp, Ntrace, metadata, trlist,
+                   greens, bpf,
+                   GFs = False, residuals = False,
+                   OnlyGetFullGF=False, Max_t_d=200,
+                   ):
     '''
     Perform the actual W-phase inversion.
 
@@ -1165,6 +1067,7 @@ def core_inversion(t_h,t_d,cmtloc,orig, periods, MRF,
     :param array Ntraces: Array containing the length of each trace.
     :param dict metadata: Dictionary with the metadata of each station.
     :param list trlist: List with the station id which will contribute to the inv.
+    :param greens: A :class:`GreensFunctions` instance.
     :param bool hdf5_flag: *True* if the greens functions are stored in HDF5, *False* if they are in SAC.
     :param bool GFs: *True* if the greens functions should be returned.
     :param bool residuals: *True*, return the 'raw' misfit from the least squares inversion,
@@ -1174,8 +1077,6 @@ def core_inversion(t_h,t_d,cmtloc,orig, periods, MRF,
         without performing the inversion, *False*, perform the inversion for the time delay given
         by *t_d*.
     :param numeric Max_t_d: Maximum time delay to consider if *OnlyGetFullGF = True*.
-    :param hdirs_hdf5: List of the names of the depth directories in the greens function HDF5 library.
-        Ignored if *hdf5_flag = False*.
 
     :return: What is returned depends on the values of the parameters as described below.
 
@@ -1189,26 +1090,7 @@ def core_inversion(t_h,t_d,cmtloc,orig, periods, MRF,
 
             2. The greens function matrix also.
     '''
-
-    # Dealing with hdf5 files -  define the functions used to extract greens functions.
-    if hdf5_flag:
-        GFSelectZ_ = GFSelectZ_hdf5
-        MTrotationZ_ = MTrotationZ_hdf5
-        GFSelectN_ = GFSelectN_hdf5
-        MTrotationN_ = MTrotationN_hdf5
-        GFSelectE_ = GFSelectE_hdf5
-        MTrotationE_ = MTrotationE_hdf5
-        with h5py.File(_greens_function_dir , "r") as GFfile:
-            delta = GFfile.attrs["dt"]
-    else:
-        GFSelectZ_ = GFSelectZ
-        MTrotationZ_ = MTrotationZ
-        GFSelectN_ = GFSelectN
-        MTrotationN_ = MTrotationN
-        GFSelectE_ = GFSelectE
-        MTrotationE_ = MTrotationE
-        dtDir = os.path.join(_greens_function_dir, "H003.5", "PP", "GF.0001.SY.LHZ.SAC")
-        delta = read(dtDir)[0].stats.delta
+    delta = greens.delta
 
     hyplat = cmtloc[0]
     hyplon = cmtloc[1]
@@ -1217,7 +1099,7 @@ def core_inversion(t_h,t_d,cmtloc,orig, periods, MRF,
     Tb     = periods[1]
 
     # Index of the first value that will be valid after convolution with MRF.
-    FirstValid = int(len(MRF)/2.)
+    first_valid_time = int(len(MRF)/2.)
 
     # the indicies of the beginning and end of each trace in observed displacements (ObservedDisp)
     indexes =  np.array(np.concatenate((np.array([0.]), np.cumsum(Ntrace))), dtype='int')
@@ -1255,67 +1137,36 @@ def core_inversion(t_h,t_d,cmtloc,orig, periods, MRF,
         # because of "symetry properties of a sphere". Then to recover the correct
         # moment tensor (or equivalently synthetic trace) we rotate them. For details
         # see Kanamori and Rivera 2008.
-        if trid[-1] == 'Z':
-            syntr = GFSelectZ_(dist, hypdep, _greens_function_dir, hdirs_hdf5)
-            syntrrot = MTrotationZ_(-azi*np.pi/180, syntr)
+        azi_r = -azi*np.pi/180
+        synth = greens.select_rotated(trid[-1], dist, hypdep, azi_r)
+
+        ##################################
+        # Extract W phase from synthetics.
+
+        # Use only what we think is noise to calculate and compensate the mean
+        synth -= np.mean(synth[..., :60], axis=-1)[:, None]
+
+        # Convolve with moment rate function
+        synth = ndimage.convolve1d(synth, MRF, axis=-1, mode='nearest')\
+            [:, first_valid_time-2:-first_valid_time]
+
+        # Pad data back to original length
+        fillvec1 = synth[:, 0, None] * np.ones(first_valid_time)
+        fillvec2 = synth[:, -1, None] * np.ones(first_valid_time)
+        synth = np.concatenate((fillvec1, synth, fillvec2), axis=-1)
+        synth -= np.mean(synth[:, :60], axis=-1)[:, None]
+
+        # Bandpass filter to extract W phase
+        def wphase_filter(trace):
+            return bpf(sta, trace, len(trace), delta, 4, 1, 1./Tb, 1./Ta)
+        synth = np.apply_along_axis(wphase_filter, -1, synth)
+
+        if OnlyGetFullGF:
+            synth = ltrim(synth, t_p - Max_t_d, delta)
+            synth = synth[:, :Ntrace[i] + Max_t_d]
         else:
-            syntrT = GFSelectN_(dist, hypdep, _greens_function_dir, hdirs_hdf5)
-            syntrP = GFSelectE_(dist, hypdep, _greens_function_dir, hdirs_hdf5)
-            syntrrotT = MTrotationN_(-azi*np.pi/180, syntrT)
-            syntrrotP = MTrotationE_(-azi*np.pi/180, syntrP)
-
-            for l in range(6):
-                if hdf5_flag:
-                    syntrrotT[l], syntrrotP[l] = Rot2D(-syntrrotT[l], syntrrotP[l], -bazi)
-                else:
-                    syntrrotT[l].data, syntrrotP[l].data = Rot2D(-syntrrotT[l].data,
-                                                            syntrrotP[l].data, -bazi)
-            if trid[-1] == '1' or trid[-1] == 'N':
-                syntrrot = syntrrotT
-
-
-            elif trid[-1] == '2' or trid[-1] == 'E':
-                syntrrot = syntrrotP
-
-        # Extract Wphase from synthetics
-        for i_trR, trR in enumerate(syntrrot): ##Check this loop, seems to be slow.
-            if hdf5_flag:
-                data_ = trR
-            else:
-                data_ = trR.data
-
-            # greens functions are not stored in standard units, convert ot Nm (Newton meters)
-            data_ *= 10.**-21
-
-            # use only what we think is noise to calculate the mean
-            mean = np.mean(data_[:60])
-            data_ -= mean
-
-            data_ = ndimage.convolve(data_, MRF, mode='nearest')\
-                            [FirstValid-2:-FirstValid]
-
-            # TODO: look at this... do we want to remove this catch?
-            try:
-                fillvec1 = data_[ 0] * np.ones(FirstValid)
-                fillvec2 = data_[-1] * np.ones(FirstValid)
-            except Exception:
-                logger.warning(FirstValid)
-
-            data_ = np.concatenate((fillvec1, data_, fillvec2))
-            mean = np.mean(data_[:60])
-            data_ -= mean
-            data_ = _bpfunction(sta,data_,len(trR),delta ,4 ,1 , 1./Tb, 1./Ta)
-
-            if OnlyGetFullGF:
-                data_ = ltrim(data_, t_p - Max_t_d, delta)
-                data_ = data_[:Ntrace[i] + Max_t_d ]
-            else:
-                data_ = ltrim(data_, t_p - t_d, delta)
-                data_ = data_[:Ntrace[i]]
-            if hdf5_flag:
-                syntrrot[i_trR]  = data_
-            else:
-                trR.data = data_
+            synth = ltrim(synth, t_p - t_d, delta)
+            synth = synth[:, :Ntrace[i]]
 
         if OnlyGetFullGF:
             ta = tb
@@ -1325,11 +1176,11 @@ def core_inversion(t_h,t_d,cmtloc,orig, periods, MRF,
             tb = indexes[i+1]
 
         # the first of the following lines are due to constraint that volume does not change
-        GFmatrix[ta:tb, 0] = syntrrot[0][:] - syntrrot[1][:]
-        GFmatrix[ta:tb, 1] = syntrrot[2][:] - syntrrot[1][:]
-        GFmatrix[ta:tb, 2] = syntrrot[4][:]
-        GFmatrix[ta:tb, 3] = syntrrot[5][:]
-        GFmatrix[ta:tb, 4] = syntrrot[3][:]
+        GFmatrix[ta:tb, 0] = synth[0][:] - synth[1][:]
+        GFmatrix[ta:tb, 1] = synth[2][:] - synth[1][:]
+        GFmatrix[ta:tb, 2] = synth[4][:]
+        GFmatrix[ta:tb, 3] = synth[5][:]
+        GFmatrix[ta:tb, 4] = synth[3][:]
 
     if OnlyGetFullGF:
         return GFmatrix
@@ -1339,8 +1190,7 @@ def core_inversion(t_h,t_d,cmtloc,orig, periods, MRF,
     M = inversion[0]
 
     # construct the synthetics
-    syn = (M[0]*GFmatrix[:,0] + M[1]*GFmatrix[:,1]
-        + M[2]*GFmatrix[:,2] + M[3]*GFmatrix[:,3] + M[4]*GFmatrix[:,4])
+    syn = GFmatrix.dot(M)
 
     # set the 'sixth' element of the moment tensor (corresponds to the
     # constraint added 20 lines or so above)
@@ -1359,7 +1209,7 @@ def core_inversion(t_h,t_d,cmtloc,orig, periods, MRF,
 
 
 
-def get_depths_for_grid(hypdep, length = 100):
+def get_depths_for_grid(hypdep, greens, length=100):
     '''
     This function will return a list with the adequate values
     of depth to look at in the grid search
@@ -1369,30 +1219,9 @@ def get_depths_for_grid(hypdep, length = 100):
     min_dep = 11. #No shallower depths allowed.
      # Total length of the section in which we'll search
     #####
-    depths = sorted([float(dir.split(os.path.sep)[-1][1:])
-              for dir in glob.glob(os.path.join(_greens_function_dir, '*.5'))])
-    depths = np.array(depths)
+    depths = np.asarray(greens.depths, dtype=np.float)
     depths_grid = depths[np.where(np.abs(depths-hypdep)<length*0.5)]
     depths_grid = depths_grid[np.where(depths_grid > min_dep)]
-    return depths_grid
-
-
-
-def get_depths_for_grid_hdf5(hypdep, length = 100):
-    '''
-    This function will return a list with the adequate values
-    of depth to look at in the grid search
-    '''
-
-    ####Parameters:
-    min_dep = 11. #No shallower depths allowed.
-     # Total length of the section in which we'll search
-    #####
-    with h5py.File(_greens_function_dir , "r") as GFfile:
-        depths = sorted(GFfile.keys())
-        depths = np.array([dep[1:] for dep in depths], dtype=np.float)
-        depths_grid = depths[np.where(np.abs(depths-hypdep)<length*0.5)]
-        depths_grid = depths_grid[np.where(depths_grid > min_dep)]
 
     return depths_grid
 
@@ -1470,8 +1299,7 @@ def remove_individual_traces(tol, M, GFmatrix, ObservedDisp,
     M = np.delete(M,2)
 
     # construct the synthetic trace
-    syn = (M[0]*GFmatrix[:,0] + M[1]*GFmatrix[:,1]+ M[2]*GFmatrix[:,2]
-             + M[3]*GFmatrix[:,3] + M[4]*GFmatrix[:,4])
+    syn = GFmatrix.dot(M)
     j = 0
     for i, trid in enumerate(trlist):
         # get the observed and synthetic traces for a channel
@@ -1535,133 +1363,6 @@ def rot_12_NE(st, META):
 
 
 
-def GFSelectN(dist, hypdepth, GFdir, *args, **kwargs):
-    ###I'm considering the decimal .5 in the depths dirs.
-    depth = []
-    depthdir = []
-    for file in os.listdir(GFdir):
-        if file[-2:] == ".5":
-            depthdir.append(file)
-            depth.append(float(file[1:]))
-    BestDirIndex = np.argsort(abs(hypdepth-np.array(depth)))[0]
-    # hdir is the absolute path to the closest deepth.
-    hdir = os.path.join(GFdir, depthdir[BestDirIndex])
-    dist_dir =  int(dist*10.+0.5)
-
-    if dist_dir > 900:
-        dist_dir = 900 # We do not have GFs for dist > 90 deg
-    dist_str = str(dist_dir)#Some GFs have only odd dists.
-    dist_form = dist_str.zfill(4)
-
-    ## Loading files
-    trPP = read(os.path.join(hdir, "PP", "GF." + dist_form + ".SY.LHL.SAC"))[0]
-    trRR = read(os.path.join(hdir, "RR", "GF." + dist_form + ".SY.LHL.SAC"))[0]
-    trRT = read(os.path.join(hdir, "RT", "GF." + dist_form + ".SY.LHL.SAC"))[0]
-    trTT = read(os.path.join(hdir, "TT", "GF." + dist_form + ".SY.LHL.SAC"))[0]
-
-    return (trPP, trRR, trRT,  trTT)
-
-
-
-def MTrotationN(azi, components):
-    '''
-    Rotate the Moment Tensor according to the azimuthal angle in radians.
-    '''
-    (trPPsy,  trRRsy, trRTsy,  trTTsy) = components
-    sinp = np.sin(azi)
-    cosp = np.cos(azi)
-
-	#Creating traces for the rotated syn:
-    trRRsy_rot =   trRRsy.copy()
-    trPPsy_rot =   trPPsy.copy()
-    trTTsy_rot =   trTTsy.copy()
-    trTPsy_rot =   trTTsy.copy()
-    trRTsy_rot =   trRTsy.copy()
-    trRPsy_rot =   trPPsy.copy()
-
-    #Obtaining the rotated synthetics:
-    trRRsy_rot.data =   trRRsy.data
-    trPPsy_rot.data =   sinp*sinp*trTTsy.data+cosp*cosp*trPPsy.data
-    trTTsy_rot.data =   cosp*cosp*trTTsy.data+sinp*sinp*trPPsy.data
-    trTPsy_rot.data =   2.*sinp*cosp*(trTTsy.data-trPPsy.data)
-    trRTsy_rot.data =   cosp*trRTsy.data
-    trRPsy_rot.data =   sinp*trRTsy.data
-
-    return [trRRsy_rot, trPPsy_rot,  trTTsy_rot, trTPsy_rot,trRTsy_rot, trRPsy_rot]
-
-
-
-def GFSelectE(dist, hypdepth, GFdir, *args, **kwargs):
-    ###I'm considering the decimal .5 in the depths dirs.
-    depth = []
-    depthdir = []
-    for file in os.listdir(GFdir):
-        if file[-2:] == ".5":
-            depthdir.append(file)
-            depth.append(float(file[1:]))
-    BestDirIndex = np.argsort(abs(hypdepth-np.array(depth)))[0]
-    # hdir is the absolute path to the closest depth.
-    hdir = os.path.join(GFdir, depthdir[BestDirIndex])
-    dist_dir =  int(dist*10.+0.5)
-
-    if dist_dir > 900:
-        dist_dir = 900 # We do not have GFs for dist > 90 deg
-    dist_str = str(dist_dir)#Some GFs have only odd dists.
-    dist_form = dist_str.zfill(4)
-
-    ## Loading files
-    trRP = read(os.path.join(hdir, "RP", "GF." + dist_form + ".SY.LHT.SAC"))[0]
-    trTP = read(os.path.join(hdir, "TP", "GF." + dist_form + ".SY.LHT.SAC"))[0]
-    #trRP.data = -trRP.data
-    #trTP.data = -trTP.data
-
-    return (trRP, trTP)
-
-
-
-def MTrotationE(azi, components):
-    '''
-    Rotates the Moment Tensor according to the azimuthal angle in radians.
-    '''
-    (trRPsy, trTPsy) = components
-    sinp = np.sin(azi)
-    cosp = np.cos(azi)
-    sin2p = np.sin(2.*azi)
-    cos2p = np.cos(2.*azi)
-	#Creating traces for the rotated syn:
-    trRRsy_rot =   trRPsy.copy()
-    trPPsy_rot =   trRPsy.copy()
-    trTTsy_rot =   trRPsy.copy()
-    trTPsy_rot =   trRPsy.copy()
-    trRTsy_rot =   trRPsy.copy()
-    trRPsy_rot =   trRPsy.copy()
-    #Obtaining the rotated synthetics:
-    trRRsy_rot.data[:] =   0.
-    trPPsy_rot.data =   0.5*sin2p*trTPsy.data
-    trTTsy_rot.data =  -0.5*sin2p*trTPsy.data
-    trTPsy_rot.data =   cos2p*trTPsy.data
-    trRTsy_rot.data =   -sinp*trRPsy.data
-    trRPsy_rot.data =  cosp*trRPsy.data
-
-    return [trRRsy_rot, trPPsy_rot,  trTTsy_rot, trTPsy_rot,trRTsy_rot, trRPsy_rot]
-
-
-
-def MTrot(azi,mt):
-    azi = np.pi/180.* azi
-    sinp = np.sin(azi)
-    cosp = np.cos(azi)
-    sin2p = np.sin(2.*azi)
-    cos2p = np.cos(2.*azi)
-
-    mtrotpp = mt[1]*cosp**2-2*mt[3]*sinp*cosp+mt[2]*sinp**2
-    mtrottt = mt[1]*sinp**2+2*mt[3]*sinp*cosp+mt[2]*cosp**2
-    mtrotrr = float(mt[0])
-    mtrottp = -0.5*(mt[2]-mt[1])*sin2p+mt[3]*cos2p
-    mtrotrp = mt[5]*cosp - mt[4]*sinp
-    mtrotrt = mt[4]*cosp + mt[5]*sinp
-
-    return [mtrotrr, mtrotpp, mtrottt, mtrottp, mtrottp, mtrotrt, mtrotrp]
 
 
 
@@ -1689,6 +1390,9 @@ def get_timedelay_misfit(t_d, GFmatrix, Ntrace, ObservedDisp, max_t_d):
         t_d2 = max_t_d - t_d
         GFmatrix_sm = np.zeros((np.array(Ntrace,dtype=np.int).sum(),5))
         cumNtraces = np.concatenate(([0], np.array(Ntrace,dtype=np.int).cumsum()))
+        #aryNtrace = np.asarray(Ntrace, dtype=np.int)
+        #GFmatrix_sm = np.zeros((aryNtrace.sum(),5))
+        #cumNtraces = np.concatenate(([0], aryNtrace.cumsum()))
         tb_fm = 0
         for i_ntr, ta in enumerate(cumNtraces[:-1]):
             trlen = Ntrace[i_ntr]
@@ -1703,207 +1407,20 @@ def get_timedelay_misfit(t_d, GFmatrix, Ntrace, ObservedDisp, max_t_d):
         raise Exception("".join(traceback.format_exception(*sys.exc_info())))
 
 
-
-def GFSelectZ_hdf5(dist, hdir, gfdir, hdirs_hdf5):
-    """
-    Loads the Greens function for the given *dist* and *hypdepth* from a HDF file.
-
-    :param float dist: The epicentral distance.
-    :param float hypdepth: The depth.
-    :param str gfdir: T HDF5 file.
-    :param hdirs_hdf5: List of the names of the depth 'directories' inside the HDF5 file.
-    :type hdirs_hdf5: List of str
-
-    :return: Tuple containin the four greens functions corresponding to the vertical component.
-    :rtype: Tuple of four arrays.
-    """
-
-    hdir = search_best_hdir_hdf5(hdir,hdirs_hdf5)#This can be done in core inv!
-    #We do not have GF> 90. This is only to prevent the code from crashing!
-    if dist > 90:
-        dist = 90
-    ###############################################################
-    #Updated to work with the 0.1d spaced GF database
-    #dist_str = str(int(dist*10.)/2*2+1)
-    dist_str =  str(int(dist*10.+0.5))
-    dist_form = dist_str.zfill(4)
-    with h5py.File(gfdir , "r") as GFfile:
-        trPP = GFfile[hdir + "PP/GF." + dist_form + ".SY.LHZ.SAC"][...]
-        trRR = GFfile[hdir + "RR/GF." + dist_form + ".SY.LHZ.SAC"][...]
-        trRT = GFfile[hdir + "RT/GF." + dist_form + ".SY.LHZ.SAC"][...]
-        trTT = GFfile[hdir + "TT/GF." + dist_form + ".SY.LHZ.SAC"][...]
-
-    return (trPP, trRR, trRT,  trTT)
-
-
-
-def MTrotationZ_hdf5(azi, components):
-    """
-    Rotates the Greens function for the given azimuth (*azi*).
-
-    :param float azi: The station azimuth with respect to the hypocenter.
-    :param components = (trPPsy,  trRRsy, trRTsy,  trTTsy): Output of :py:func:`GFSelectZ`.
-
-    :return: Tuple containin the four greens functions corresponding to the vertical component.
-    :rtype: Tuple of six arrays.
-    """
-    (trPPsy,  trRRsy, trRTsy,  trTTsy) = components
-    sinp = np.sin(azi)
-    cosp = np.cos(azi)
-
-    trRRsy_rot =   trRRsy
-    trPPsy_rot =   sinp*sinp*trTTsy + cosp*cosp*trPPsy
-    trTTsy_rot =   cosp*cosp*trTTsy+sinp*sinp*trPPsy
-    trTPsy_rot =   2.*sinp*cosp*(trTTsy-trPPsy)
-    trRTsy_rot =   cosp*trRTsy
-    trRPsy_rot =   sinp*trRTsy
-    return [trRRsy_rot, trPPsy_rot,  trTTsy_rot,
-            trTPsy_rot,trRTsy_rot, trRPsy_rot]
-
-
-
-def GFSelectN_hdf5(dist, hdir, gfdir, hdirs_hdf5):
-    """
-    Loads the Greens function for the given *dist* from a HDF file.
-
-    :param float dist: The epicentral distance.
-    :param str gfdir: T HDF5 file.
-    :param hdirs_hdf5: List of the names of the depth 'directories' inside the HDF5 file.
-    :type hdirs_hdf5: List of str
-
-    :return: Tuple containin the four greens functions corresponding to the vertical component.
-    :rtype: Tuple of four arrays.
-    """
-
-    ###I'm considering the decimal .5 in the depths dirs.
-    hdir = search_best_hdir_hdf5(hdir,hdirs_hdf5)#This can be done in core inv!
-    #We do not have GF> 90. This is only to prevent the code from crashing!
-    if dist > 90:
-        dist = 90
-    ###############################################################
-    dist_str =  str(int(dist*10.+0.5))
-    dist_form = dist_str.zfill(4)
-
-    ## Loading files
-    with h5py.File(gfdir , "r") as GFfile:
-        trPP = GFfile[hdir + "PP/GF." + dist_form + ".SY.LHL.SAC" ][...]
-        trRR = GFfile[hdir + "RR/GF." + dist_form + ".SY.LHL.SAC" ][...]
-        trRT = GFfile[hdir + "RT/GF." + dist_form + ".SY.LHL.SAC" ][...]
-        trTT = GFfile[hdir + "TT/GF." + dist_form + ".SY.LHL.SAC" ][...]
-    return (trPP, trRR, trRT,  trTT)
-
-
-
-def MTrotationN_hdf5(azi, components):
-    """
-    Rotates the Greens function for the given azimuth (*azi*).
-
-    :param float azi: The station azimuth with respect to the hypocenter.
-    :param components = (trPPsy,  trRRsy, trRTsy,  trTTsy): Output of :py:func:`GFSelectZ`.
-
-    :return: Tuple containin the four greens functions corresponding to the vertical component.
-    :rtype: Tuple of six arrays.
-    """
-    (trPPsy,  trRRsy, trRTsy,  trTTsy) = components
-    sinp = np.sin(azi)
-    cosp = np.cos(azi)
-    #Obtaining the rotated synthetics:
-    trRRsy_rot =   trRRsy
-    trPPsy_rot =   sinp*sinp*trTTsy+cosp*cosp*trPPsy
-    trTTsy_rot =   cosp*cosp*trTTsy+sinp*sinp*trPPsy
-    trTPsy_rot =   2.*sinp*cosp*(trTTsy-trPPsy)
-    trRTsy_rot =   cosp*trRTsy
-    trRPsy_rot =   sinp*trRTsy
-
-    return [trRRsy_rot, trPPsy_rot,  trTTsy_rot, trTPsy_rot,trRTsy_rot, trRPsy_rot]
-
-
-
-def GFSelectE_hdf5(dist, hdir,gfdir,hdirs_hdf5):
-    """
-    Loads the Greens function for the given *dist* from a HDF file.
-
-    :param float dist: The epicentral distance.
-    :param str gfdir: T HDF5 file.
-    :param hdirs_hdf5: List of the names of the depth 'directories' inside the HDF5 file.
-    :type hdirs_hdf5: List of str
-
-    :return: Tuple containin the four greens functions corresponding to the vertical component.
-    :rtype: Tuple of four arrays.
-    """
-
-    ###I'm considering the decimal .5 in the depths dirs.
-    hdir = search_best_hdir_hdf5(hdir,hdirs_hdf5)#This can be done in core inv!
-    #We do not have GF> 90. This is only to prevent the code from crashing!
-    if dist > 90:
-        dist = 90
-    ###############################################################
-    dist_str =  str(int(dist*10.+0.5))
-    dist_form = dist_str.zfill(4)
-    ## Loading files
-    with h5py.File(gfdir , "r") as GFfile:
-        trRP = GFfile[hdir + "RP/GF." + dist_form + ".SY.LHT.SAC"][...]
-        trTP = GFfile[hdir + "TP/GF." + dist_form + ".SY.LHT.SAC"][...]
-
-    return (trRP, trTP)
-
-
-
-def MTrotationE_hdf5(azi, components):
-    """
-    Rotates the Greens function for the given azimuth (*azi*).
-
-    :param float azi: The station azimuth with respect to the hypocenter.
-    :param components = (trPPsy,  trRRsy, trRTsy,  trTTsy): Output of :py:func:`GFSelectZ`.
-
-    :return: Tuple containin the four greens functions corresponding to the vertical component.
-    :rtype: Tuple of six arrays.
-    """
-    (trRPsy, trTPsy) = components
-    sinp = np.sin(azi)
-    cosp = np.cos(azi)
-    sin2p = np.sin(2.*azi)
-    cos2p = np.cos(2.*azi)
-
-    #Obtaining the rotated synthetics:
-    trRRsy_rot =   np.zeros(trRPsy.shape,dtype=np.float32)
-    trPPsy_rot =   0.5*sin2p*trTPsy
-    trTTsy_rot =  -0.5*sin2p*trTPsy
-    trTPsy_rot =   cos2p*trTPsy
-    trRTsy_rot =   -sinp*trRPsy
-    trRPsy_rot =  cosp*trRPsy
-
-    return [trRRsy_rot, trPPsy_rot,  trTTsy_rot, trTPsy_rot,trRTsy_rot, trRPsy_rot]
-
-
-
-def search_best_hdir_hdf5(hypdepth,hdirs):
-
-    depths = [float(dep[1:]) for dep in hdirs]
-    BestDirIndex = np.argsort(abs(hypdepth-np.array(depths)))[0]
-    hdir_best = hdirs[BestDirIndex] + "/"
-    # hdir is the absolute path to the closest deepth.
-    return hdir_best
-
-
-
 def ltrim(data, starttime, delta):
     '''
     Left trimming similar to obspy but when *data* is a np array.
 
-    :param data: one dimensional array to trim.
+    :param data: array to trim, with time being the last axis.
     :type data: :py:class:`numpy.array`.
     :param numeric starttime: The amount of time to trim from the front of the trace in seconds.
     :param float delta: Sampling interval in seconds.
 
     :returns: A view of the relevant subset of *data*.
     '''
-
     i_of = int(round(starttime/delta))
     if i_of < 0:
-        gap = np.empty(abs(i_of))
-        gap.fill(data[0])
-        data = np.concatenate((gap, data))
-        return data
-    return data[i_of:]
-
+        gap = data[..., 0, None] * np.ones(abs(i_of))
+        return np.concatenate((gap, data), axis=-1)
+    else:
+        return data[..., i_of:]

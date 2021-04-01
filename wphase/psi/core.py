@@ -33,6 +33,7 @@ except ImportError:
 
 from wphase import logger
 from .greens import GreensFunctions
+from .bandpass import bandpassfilter
 
 class WPInvWarning(Exception):
     """
@@ -56,7 +57,6 @@ def wpinv(
     eqINFO,
     gfdir,
     OL=1,
-    bpf=None,
     processes=None,
     output_dic=None):
     '''
@@ -95,29 +95,6 @@ def wpinv(
     :param int OL: Output level of the inversion. 1 computes just the preliminary
          magnitude, 2 perform an inversion using PDE location and 3
          uses an optimized centroid's location.
-
-    :param callable bpf: None or afunction to perform the Wphase filtering.
-        This would typically be a buttworth filter. The signature must be as
-        follows\:
-
-        .. code-block:: python
-
-            def bandpassfilter(sta, data, length, delta, corners, npass, low, high):
-                pass
-
-        where the arguments are\:
-
-        - *sta*: The station name.
-        - *data*: numpy array containing the data to be filtered.
-        - *length*: The length of *data*.
-        - *delta*: Sampling interval in seconds.
-        - *corners*: Integer specifying the order of the filter.
-        - *npass*: Integer specifying the number of passes: 1 for forward
-            filtering only and 2 for forward and reverse (i.e. zero phase)
-            filtering.
-        - *low*: Low frequency cutoff of filter in hertz.
-        - *high*: High frequency cutoff of filter in hertz.
-
 
     :return: What is returned depends on the processing level (*OL*), as described below.
 
@@ -167,15 +144,6 @@ def wpinv(
             output_dic[WARNINGS_KEY].append(msg)
         else:
             output_dic.add_warning(msg)
-
-    # set the function to use for filtering the Wphase
-    if bpf is None:
-        from .bandpass import bandpassfilter
-        def bpf(sta, data, length, delta, corners, npass, low, high):
-            return bandpassfilter(data, delta, corners, low, high)
-
-    # set the directory where the greens functions live
-    greens = GreensFunctions(gfdir)
 
     # used to reject a channel if the fitting of the instrument response is
     # greater than this.  see "Source inversion of W phase - speeding up
@@ -251,7 +219,7 @@ def wpinv(
     #We also want to select stations with one location code which is not the
     #default (see above).
 
-    logger.info('Initial number of traces: using %d of %d', len(st_sel), len(st))
+    logger.info('Initial number of traces: using %d with default locations (of %d total)', len(st_sel), len(st))
 
     # rotate the horizontal components to geographical north or east
     st_sel = rot_12_NE(st_sel, metadata)
@@ -339,7 +307,6 @@ def wpinv(
                 h,
                 G,
                 dt,
-                bpf=bpf,
                 corners=4,
                 baselinelen=60./dt,
                 taperlen=10.,
@@ -426,6 +393,7 @@ def wpinv(
     omega = freq*2.*np.pi
 
     # Build the Moment Rate Function (MRF):
+    greens = GreensFunctions(gfdir)
     dt = greens.delta
     MRF = MomentRateFunction(t_h, dt)
 
@@ -476,7 +444,6 @@ def wpinv(
                 h,
                 G,
                 dt,
-                bpf=bpf,
                 corners=4,
                 baselinelen=60./dt,
                 taperlen= 10.,
@@ -543,8 +510,7 @@ def wpinv(
         Ntrace,
         metadata,
         trlist,
-        greens=greens,
-        bpf=bpf,
+        gfdir=gfdir,
         OnlyGetFullGF=True,
         Max_t_d=max_t_d,
     )
@@ -575,8 +541,7 @@ def wpinv(
         Ntrace,
         metadata,
         trlist,
-        greens=greens,
-        bpf=bpf,
+        gfdir=gfdir,
         GFs=True)
 
     # Remove bad traces
@@ -607,8 +572,7 @@ def wpinv(
             Ntrace,
             metadata,
             trlist,
-            bpf=bpf,
-            greens=greens,
+            gfdir=gfdir,
             GFs=True
         )
 
@@ -633,19 +597,19 @@ def wpinv(
     ###Moment Tensor based on grid search  ######################
     ###for the optimal centroid's location #####################
 
+    logger.info("building latlon grid")
     lat_grid, lon_grid = get_latlon_for_grid(hyplat, hyplon, dist_lat=3.0,
                                              dist_lon=3.0, delta=0.8)
     logger.debug("Grid size: %d * %d", len(lon_grid), len(lat_grid))
     latlons = [(lat, lon) for lat in lat_grid for lon in lon_grid]
 
-    def try_latlon(coords):
-        lat, lon = coords
-        return core_inversion(t_h, t_d, (lat, lon, hypdep), orig, (Ta, Tb), MRF,
-                              ObservedDisp, Ntrace, metadata, trlist, greens, bpf,
-                              True, residuals=False)
+    inputs = [(t_h, t_d, (lat, lon, hypdep), orig, (Ta, Tb), MRF,
+              ObservedDisp, Ntrace, metadata, trlist, greens,
+              True, dict(residuals=False))
+              for lat, lon in latlons]
 
-    #with ProcessPoolExecutor() as pool:
-    latlon_search = list(map(try_latlon, latlons))
+    with ProcessPoolExecutor() as pool:
+        latlon_search = list(pool.map(core_inversion_wrapper, inputs))
 
     misfits_latlon = np.array([latlon_search[i][1] for i in range(len(latlons))])
     cenlat, cenlon = latlons[misfits_latlon.argmin()]
@@ -654,13 +618,13 @@ def wpinv(
     deps_grid = get_depths_for_grid(hypdep, greens)
     logger.debug("Depth grid size: %d", len(deps_grid))
 
-    def try_depth(depth):
-        return core_inversion(t_h, t_d, (cenlat, cenlon, depth), orig, (Ta,Tb),
-                              MRF, ObservedDisp, Ntrace, metadata, trlist, greens, bpf,
-                              True, residuals=False)
+    inputs = [(t_h, t_d, (cenlat, cenlon, depth), orig, (Ta,Tb),
+               MRF, ObservedDisp, Ntrace, metadata, trlist, greens,
+               True, dict(residuals=False))
+              for depth in deps_grid]
 
     with ProcessPoolExecutor() as pool:
-        depth_search = list(map(try_depth, deps_grid))
+        depth_search = list(pool.map(core_inversion_wrapper, inputs))
 
     misfits_depth = np.array([depth_search[i][1] for i in range(len(deps_grid))])
     cendep = deps_grid[misfits_depth.argmin()]
@@ -670,7 +634,7 @@ def wpinv(
 
     M, misfit, GFmatrix = core_inversion(t_h, t_d, (cenlat, cenlon, cendep),
                                          orig, (Ta,Tb), MRF, ObservedDisp,
-                                         Ntrace, metadata, trlist, greens=greens, bpf=bpf,
+                                         Ntrace, metadata, trlist, gfdir=gfdir,
                                          GFs=True)
 
     syn = (M[0]*GFmatrix[:,0] + M[1]*GFmatrix[:,1]
@@ -818,7 +782,6 @@ def RTdeconv(
         h,
         G,
         dt,
-        bpf,
         corners = 4,
         baselinelen = 60.,
         taperlen = 10.,
@@ -886,7 +849,7 @@ def RTdeconv(
     elif data_type == 'accel':
         accel = data
 
-    accel = bpf(sta,accel,len(accel),dt ,corners , 1 , fmin,fmax)
+    accel = bandpassfilter(accel, dt, corners, fmin, fmax)
 
     vel = np.zeros(len(data))
     vel[1:] = 0.5*dt*np.cumsum(accel[:-1]+accel[1:])
@@ -900,98 +863,9 @@ def RTdeconv(
     return dis
 
 
-
-def GFSelectZ(dist, hypdepth, GFdir, *args, **kwargs):
-    """
-    Loads the Greens function for the given *dist* and *hypdepth* from a SAC file.
-
-    :param float dist: The epicentral distance.
-    :param float hypdepth: The depth.
-
-    :return: Tuple containin the four greens functions corresponding to the vertical component.
-    :rtype: Tuple of four arrays.
-    """
-
-    ###I'm considering the decimal .5 in the depths dirs.
-
-    depth = []
-    depthdir = []
-    for file in os.listdir(GFdir):
-        if file[-2:] == ".5":
-            depthdir.append(file)
-            depth.append(float(file[1:]))
-    BestDirIndex = np.argsort(abs(hypdepth-np.array(depth)))[0]
-    # hdir is the absolute path to the closest deepth.
-    hdir = os.path.join(GFdir, depthdir[BestDirIndex])
-    dist_dir =  int(dist*10.+0.5)
-
-    if dist_dir > 900:
-        dist_dir = 900 # We do not have GFs for dist > 90 deg
-    dist_str = str(dist_dir)#Some GFs have only odd dists.
-
-
-    #dist_str = str(int(dist*10.))#Some GFs have only odd dists.
-    dist_form = dist_str.zfill(4)
-
-    ## Loading files
-    trPPPath = os.path.join(hdir, "PP", "GF." + dist_form + ".SY.LHZ.SAC")
-    trPP = read(trPPPath)[0]
-    #trPP.data -= trPP.data[0]
-
-    trRRPath = os.path.join(hdir, "RR", "GF." + dist_form + ".SY.LHZ.SAC")
-    trRR = read(trRRPath)[0]
-    #trRR.data -= trRR.data[0]
-
-
-    trRTPath = os.path.join(hdir, "RT", "GF." + dist_form + ".SY.LHZ.SAC")
-    trRT = read(trRTPath)[0]
-    #trRT.data -= trRT.data[0]
-
-    trTTPath = os.path.join(hdir, "TT", "GF." + dist_form + ".SY.LHZ.SAC")
-    trTT = read(trTTPath)[0]
-    #trTT.data -= trTT.data[0]
-
-    return (trPP, trRR, trRT,  trTT)
-
-
-
-def MTrotationZ(azi, components):
-    """
-    Rotates the Greens function for the given azimuth (*azi*).
-
-    :param float azi: The station azimuth with respect to the hypocenter.
-    :param components = (trPPsy,  trRRsy, trRTsy,  trTTsy): Output of :py:func:`GFSelectZ`.
-
-    :return: Tuple containin the four greens functions corresponding to the vertical component.
-    :rtype: Tuple of six arrays.
-    """
-    (trPPsy,  trRRsy, trRTsy,  trTTsy) = components
-    sinp = np.sin(azi)
-    cosp = np.cos(azi)
-
-
-	#Creating traces for the rotated syn:
-    trRRsy_rot =   trRRsy.copy()
-    trPPsy_rot =   trPPsy.copy()
-    trTTsy_rot =   trTTsy.copy()
-    trTPsy_rot =   trTTsy.copy()
-    trRTsy_rot =   trRTsy.copy()
-    trRPsy_rot =   trPPsy.copy()
-
-    #Obtaining the rotated synthetics:
-    trRRsy_rot.data =   trRRsy.data
-    trPPsy_rot.data =   sinp*sinp*trTTsy.data+cosp*cosp*trPPsy.data
-    trTTsy_rot.data =   cosp*cosp*trTTsy.data+sinp*sinp*trPPsy.data
-    trTPsy_rot.data =   2.*sinp*cosp*(trTTsy.data-trPPsy.data)
-    trRTsy_rot.data =   cosp*trRTsy.data
-    trRPsy_rot.data =   sinp*trRTsy.data
-
-    return [trRRsy_rot, trPPsy_rot,  trTTsy_rot, trTPsy_rot,trRTsy_rot, trRPsy_rot]
-
-
 def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
                    ObservedDisp, Ntrace, metadata, trlist,
-                   greens, bpf,
+                   gfdir,
                    GFs = False, residuals = False,
                    OnlyGetFullGF=False, Max_t_d=200,
                    ):
@@ -1009,7 +883,7 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
     :param array Ntraces: Array containing the length of each trace.
     :param dict metadata: Dictionary with the metadata of each station.
     :param list trlist: List with the station id which will contribute to the inv.
-    :param greens: A :class:`GreensFunctions` instance.
+    :param gfdir: Path to the greens functions or a GreensFunctions instances.
     :param bool hdf5_flag: *True* if the greens functions are stored in HDF5, *False* if they are in SAC.
     :param bool GFs: *True* if the greens functions should be returned.
     :param bool residuals: *True*, return the 'raw' misfit from the least squares inversion,
@@ -1032,13 +906,15 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
 
             2. The greens function matrix also.
     '''
+    logger.debug("core_inversion(t_d=%d, c=(%.2f, %.2f, %.2f), #tr=%d)", t_d, cmtloc[0], cmtloc[1], cmtloc[2], len(trlist))
+    if isinstance(gfdir, GreensFunctions):
+        greens = gfdir
+    else:
+        greens = GreensFunctions(gfdir)
     delta = greens.delta
 
-    hyplat = cmtloc[0]
-    hyplon = cmtloc[1]
-    hypdep = cmtloc[2]
-    Ta     = periods[0]
-    Tb     = periods[1]
+    hyplat, hyplon, hypdep = cmtloc
+    Ta, Tb = periods
 
     # Index of the first value that will be valid after convolution with MRF.
     first_valid_time = int(len(MRF)/2.)
@@ -1100,7 +976,7 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
 
         # Bandpass filter to extract W phase
         def wphase_filter(trace):
-            return bpf(sta, trace, len(trace), delta, 4, 1, 1./Tb, 1./Ta)
+            return bandpassfilter(trace, delta, 4, 1./Tb, 1./Ta)
         synth = np.apply_along_axis(wphase_filter, -1, synth)
 
         if OnlyGetFullGF:

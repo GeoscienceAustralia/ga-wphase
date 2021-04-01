@@ -4,7 +4,7 @@ from future import standard_library
 standard_library.install_aliases()
 from builtins import range
 import pickle as pickle
-from collections import Counter
+from collections import Counter, defaultdict
 import numpy as np
 from obspy.core import UTCDateTime, Stream
 
@@ -23,7 +23,7 @@ import wphase.psi.seismoutils as SU
 from wphase.psi.decimate import decimateTo1Hz, CannotDecimate
 from wphase import logger
 
-def Build_metadata_dict(
+def build_metadata_dict(
         inv,
         target_sampling_rates=[1., 20., 40., 50.],
         target_channels=['BH', 'LH'],
@@ -53,63 +53,54 @@ def Build_metadata_dict(
 
     metadata = {}
     failures = []
+    def include_channel(cha):
+        if target_channels is not None:
+            if cha.code[:-1] not in target_channels:
+                return False
+        if target_sampling_rates is not None:
+            if cha.sample_rate not in target_sampling_rates:
+                return False
+        if target_locs is not None:
+            if cha.location_code not in target_locs:
+                return False
+        return True
+
+    transfer_function_mapping = defaultdict(lambda: "Unknown", {
+        "LAPLACE (RADIANS/SECOND)": "A",
+        "LAPLACE (HERTZ)": "B",
+    })
     for net in inv:
         for sta in net:
             for cha in sta:
                 try:
-                    #Removing channels we do not want to deal with
-                    if target_channels != None:
-                        if  cha.code[:-1] not in target_channels:
-                            continue
-                    if target_sampling_rates != None:
-                        if cha.sample_rate not in target_sampling_rates:
-                            continue
-                    if target_locs != None:
-                        if cha.location_code not in target_locs:
-                            continue
-                    ###
+                    if not include_channel(cha):
+                        continue
                     trid = '.'.join((net.code, sta.code, cha.location_code, cha.code))
-                    azi = cha.azimuth
-                    elev = cha.elevation
-                    dip = cha.dip
-                    lat = cha.latitude
-                    lon = cha.longitude
-                    samp_rate = cha.sample_rate
                     resp = cha.response
                     paz = resp.get_paz()
-                    poles = paz.poles
-                    zeros = paz.zeros
-                    gain = paz.normalization_factor
-                    sens = resp.instrument_sensitivity.value
-                    tf_text = paz.pz_transfer_function_type
 
-                    if tf_text == "LAPLACE (RADIANS/SECOND)":
-                        tf = "A"
-                    elif tf_text == "LAPLACE (HERTZ)":
-                        tf = "B"
-                    else:
-                        tf = "Unknown"
-
-                    metadata[trid] = {'latitude'       : lat,
-                                  'longitude'      : lon,
-                                  'elevation'      : elev,
-                                  'transfer_function': tf,
-                                  'azimuth'        : azi,
-                                  'dip'            : dip,
-                                  'zeros'          : zeros,
-                                  'poles'          : poles,
-                                  'gain'           : gain,
-                                  'sensitivity'    : sens,
-                                  'sampling_rate'  : samp_rate
-                                 }
-                except Exception:
+                    metadata[trid] = dict(
+                        latitude=cha.latitude,
+                        longitude=cha.longitude,
+                        elevation=cha.elevation,
+                        azimuth=cha.azimuth,
+                        dip=cha.dip,
+                        sensitivity=resp.instrument_sensitivity.value,
+                        sampling_rate=cha.sample_rate,
+                        transfer_function=transfer_function_mapping[paz.pz_transfer_function_type],
+                        zeros=paz.zeros,
+                        poles=paz.poles,
+                        gain=paz.normalization_factor,
+                    )
+                except Exception as e:
+                    logger.warning(str(e))
                     failures.append(trid)
 
     return metadata, failures
 
 
 
-def GetData(
+def get_waveforms(
         eqinfo,
         META,
         wp_tw_factor=15,

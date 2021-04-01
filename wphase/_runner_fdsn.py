@@ -9,7 +9,7 @@ import pickle
 from obspy.core.utcdatetime import UTCDateTime
 from obspy.clients.fdsn import Client
 from obspy.core.inventory import Inventory
-from wphase.psi.inventory import GetData, Build_metadata_dict
+from wphase.psi.inventory import get_waveforms, build_metadata_dict
 from wphase.psi.core import wpinv, WPInvWarning
 
 import wphase.settings as settings
@@ -38,7 +38,7 @@ def load_metadata(
     """
     if inventory:
         logger.info('Building metadata from provided inventory')
-        return Build_metadata_dict(inventory)
+        return build_metadata_dict(inventory)
 
     def caller_maker(depth=0, **kwargs):
         if 'network' in kwargs and kwargs['network'].upper() == 'ALL':
@@ -110,7 +110,7 @@ def load_metadata(
                                 # TODO: log that this has happenned
                                 pass
 
-    return Build_metadata_dict(inv)
+    return build_metadata_dict(inv)
 
 
 
@@ -193,7 +193,7 @@ def runwphase(
 
     try:
         # load the data for from the appropriate server
-        streams, meta_t_p_ = GetData(
+        streams, meta_t_p_ = get_waveforms(
             eqinfo,
             metadata,
             wp_tw_factor = wp_tw_factor,

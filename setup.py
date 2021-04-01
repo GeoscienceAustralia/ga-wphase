@@ -47,6 +47,7 @@ setup(
     ],
     install_requires = [
         'backports.functools_lru_cache; python_version < "3.0.0"',
+        'future',
         'h5py',
         'matplotlib',
         'numpy',

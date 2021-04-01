@@ -1,6 +1,8 @@
 """Greens function data source."""
 import os.path
 
+from future.utils import raise_from
+
 import h5py
 import numpy as np
 import obspy
@@ -50,19 +52,15 @@ class GreensFunctions(object):
         self.path = path
         self.is_hdf5 = path.split('.')[-1] == 'hdf5'
         if self.is_hdf5:
-            self._hdf_file = h5py.File(self.path, 'r')
-            self._hdirs = list(self._hdf_file)
+            with self._hdf_open() as f:
+                self._hdirs = list(f)
         else:
             self._hdirs = [f for f in os.listdir(path)
                            if f.endswith('.5')]
         self.depths = np.array([float(d[1:]) for d in self._hdirs], dtype=np.float)
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        if self.is_hdf5:
-            self._hdf_file.close()
+    def _hdf_open(self):
+        return h5py.File(self.path, 'r')
 
     @lru_cache(maxsize=None)
     def _closest_depth(self, depth):
@@ -72,7 +70,8 @@ class GreensFunctions(object):
 
     def _get_array(self, path):
         if self.is_hdf5:
-            return self._hdf_file[path][...]
+            with self._hdf_open() as f:
+                return f[path][...]
         else:
             return self._read_obspy_trace(path)[0].data
 
@@ -88,8 +87,8 @@ class GreensFunctions(object):
                 "%s%s/GF.%s.SY.LH%s.SAC" %
                 (hdir, mt_component, dist, wf_component)
             ) * self.gf_unit_Nm
-        except Exception:
-            raise KeyError(tup)
+        except Exception as e:
+            raise_from(KeyError(tup), e)
 
     def select(self, wf_component, dist, depth):
         """Retrieves the raw Greens functions for the given distance, depth and
@@ -169,7 +168,8 @@ class GreensFunctions(object):
     def delta(self):
         """Time resolution of greens functions database"""
         if self.is_hdf5:
-            return self._hdf_file.attrs["dt"]
+            with self._hdf_open() as f:
+                return f.attrs["dt"]
         else:
             return self._read_obspy_trace("H003.5/PP/GF.0001.SY.LHZ.SAC")[0].stats.delta
 

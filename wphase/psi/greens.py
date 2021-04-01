@@ -57,7 +57,7 @@ class GreensFunctions(object):
         else:
             self._hdirs = [f for f in os.listdir(path)
                            if f.endswith('.5')]
-        self.depths = np.array([float(d[1:]) for d in self._hdirs], dtype=np.float)
+        self.depths = np.array([float(d[1:]) for d in self._hdirs], dtype=float)
 
     def _hdf_open(self):
         return h5py.File(self.path, 'r')

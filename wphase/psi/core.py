@@ -247,7 +247,7 @@ def wpinv(
         trmeta =  metadata[tr.id]
         trlat = trmeta['latitude']
         trlon = trmeta['longitude']
-        tr.data = np.array(tr.data, dtype=np.float)
+        tr.data = np.array(tr.data, dtype=float)
 
         # compute distance in degrees between 2 locations
         dist = locations2degrees(hyplat, hyplon, trlat, trlon)
@@ -419,7 +419,7 @@ def wpinv(
         t2 = t1 + dist*wphase_cutoff
         tr = st_sel.select(id = trid)[0]
 
-        tr.data = np.array(tr.data,dtype=np.float)
+        tr.data = np.array(tr.data,dtype=float)
         if trmeta['transfer_function'] == "B":
             AmpfromPAZ  = Vpaz2freq(trmeta,freq/2./np.pi)  # hz to rad*hz
         elif trmeta['transfer_function'] == "A":
@@ -926,10 +926,10 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
     if OnlyGetFullGF:
         Max_t_d = int(Max_t_d)
         Nst = len(Ntrace)
-        GFmatrix = np.zeros((np.array(Ntrace, dtype=np.int).sum() + Max_t_d*Nst, 5))
+        GFmatrix = np.zeros((np.array(Ntrace, dtype=int).sum() + Max_t_d*Nst, 5))
         tb = 0
     else:
-        GFmatrix = np.zeros((np.array(Ntrace, dtype=np.int).sum(), 5))
+        GFmatrix = np.zeros((np.array(Ntrace, dtype=int).sum(), 5))
 
     #### Inversion:
     for i, trid in enumerate(trlist):
@@ -1037,7 +1037,7 @@ def get_depths_for_grid(hypdep, greens, length=100):
     min_dep = 11. #No shallower depths allowed.
      # Total length of the section in which we'll search
     #####
-    depths = np.asarray(greens.depths, dtype=np.float)
+    depths = np.asarray(greens.depths, dtype=float)
     depths_grid = depths[np.where(np.abs(depths-hypdep)<length*0.5)]
     depths_grid = depths_grid[np.where(depths_grid > min_dep)]
 

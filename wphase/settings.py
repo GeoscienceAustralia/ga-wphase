@@ -33,6 +33,8 @@ if not WPHASE_HOME:
 
 #: Directory containing the green's functions.
 GREEN_DIR = os.environ.get('WPHASE_GREENS_FUNCTIONS')
+if not GREEN_DIR:
+    raise Exception("env var WPHASE_GREENS_FUNCTIONS is not set.")
 
 #: Path to where datasets are saved for posterity.
 WPHASE_SAVED_DATASETS_ROOT = os.environ.get(

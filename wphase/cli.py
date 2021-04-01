@@ -85,6 +85,7 @@ class WPhase(Application):
         self.bucket_name = None
         self.agency = 'GA'
         self.make_maps = True
+        self.overwrite = False
 
         # enable messaging support
         self.setMessagingEnabled(True)
@@ -278,7 +279,7 @@ class WPhase(Application):
                     'dep' : depth,
                     'time': UTCDateTime(self.commandline().optionString("time"))}
             except Exception:
-                Logging.error('You must provide either lat/lon/time or a JSON payload')
+                wphase.logger.error('You must provide either lat/lon/time or a JSON payload')
                 return False
 
             getter('sourcezone')
@@ -321,7 +322,7 @@ class WPhase(Application):
             if self.write_s3 and (
                     self.evid is None or \
                     self.bucket_name is None):
-                Logging.error('attempt to write to s3, but did not provide evid and bucket name.')
+                wphase.logger.error('attempt to write to s3, but did not provide evid and bucket name.')
                 return False
 
             if self.notificationemail is not None and (
@@ -330,7 +331,7 @@ class WPhase(Application):
                     self.evid is None or \
                     self.resultid is None
                     ):
-                Logging.error('cannot send email.')
+                wphase.logger.error('cannot send email.')
                 return False
 
         return True
@@ -349,7 +350,7 @@ class WPhase(Application):
 
         item = None
         res = None
-        parser = WPhaseParser(Logging.info)
+        parser = WPhaseParser(wphase.logger.info)
 
         Logging.enableConsoleLogging(Logging.getGlobalChannel("error"))
         wphase_failed = False
@@ -368,7 +369,7 @@ class WPhase(Application):
                     output_dir_can_exist=self.overwrite)
             except Exception:
                 from traceback import format_exc
-                Logging.error('failed to run wphase: {}'.format(format_exc()))
+                wphase.logger.error('failed to run wphase: {}'.format(format_exc()))
                 wphase_failed = True
             else:
                 if self.evid is not None:
@@ -382,37 +383,37 @@ class WPhase(Application):
                     except Exception as e:
                         # not sure how we would get here, but we just don't want
                         # to stop the rest of processing
-                        Logging.error('failed to add event id to event: {}'.format(e))
+                        wphase.logger.error('failed to add event id to event: {}'.format(e))
 
                 try:
                     try: res_dict = res.as_dict()
                     except Exception: res_dict = res
                     item = parser.read(json_data=res_dict)
                 except Exception as e:
-                    Logging.error('failed to parse event JSON for SC3: {}'.format(e))
+                    wphase.logger.error('failed to parse event JSON for SC3: {}'.format(e))
                     item = None
 
         else:
             try:
                 item = parser.read(filename=self.filename)
             except Exception as e:
-                Logging.error('failed parse event JSON for SC3: {}'.format(e))
+                wphase.logger.error('failed parse event JSON for SC3: {}'.format(e))
 
         if item is not None:
             try:
                 objs = createAndSendObjects(item, self.connection(),
-                                            evid=self.evid, logging=Logging,
+                                            evid=self.evid, logging=wphase.logger,
                                             agency=self.agency)
             except Exception as e:
-                Logging.error('failed create objects for SC3: {}'.format(e))
+                wphase.logger.error('failed create objects for SC3: {}'.format(e))
             else:
                 try:
                     # write output to file
                     filename = os.path.join(self.output, 'sc3.xml')
                     writeSCML(filename, objs)
-                    Logging.info("Stored results in SCML as {}".format(filename))
+                    wphase.logger.info("Stored results in SCML as {}".format(filename))
                 except Exception as e:
-                    Logging.error('failed write SCML to file: {}'.format(e))
+                    wphase.logger.error('failed write SCML to file: {}'.format(e))
 
 
         if self.write_s3:
@@ -428,9 +429,9 @@ class WPhase(Application):
                     self.evid,
                     self.resultid,
                     [(LOG_FILE_NAME, 'sc3.log')],
-                    Logging.error)
+                    wphase.logger.error)
             except Exception as e:
-                Logging.error('failed write to S3: {}'.format(e))
+                wphase.logger.error('failed write to S3: {}'.format(e))
             finally:
                 # since we may do more runs, remove the log so we don't
                 # contaminate later runs with info for this run

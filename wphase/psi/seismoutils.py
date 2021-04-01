@@ -22,8 +22,6 @@ try:
 except ImportError:
     from obspy.core.util.geodetics import gps2DistAzimuth as gps2dist_azimuth
 
-from . import datautils as DU
-
 
 
 def AzimuthalGap(META,trlist, location):

@@ -139,6 +139,7 @@ def runwphase(
         pickle_inputs=False,
         make_maps=True,
         make_plots=True,
+        raise_errors=False,
         **kwargs):
 
     """
@@ -241,6 +242,8 @@ def runwphase(
     except WPInvWarning as e:
         wphase_output.add_warning(str(e))
     except Exception as e:
+        if raise_errors:
+            raise
         wphase_output[settings.WPHASE_ERROR_KEY] = str(e)
         wphase_output[settings.WPHASE_ERROR_STACKTRACE_KEY] = "".join(traceback.format_exception(*sys.exc_info()))
 

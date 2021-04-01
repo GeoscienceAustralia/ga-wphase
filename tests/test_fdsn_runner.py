@@ -18,5 +18,5 @@ def test_ga2016rhegtj_with_iris_fdsn(tmpdir):
     # We run one test with IRIS, but don't validate the exact results.
     r = runwphase(eqinfo=ga2016rhegtj, server='IRIS',
                   output_dir=str(tmpdir), output_dir_can_exist=True,
-                  make_maps=False)
+                  make_maps=False, raise_errors=True)
     assert isinstance(r['MomentTensor']['drmag'], float)

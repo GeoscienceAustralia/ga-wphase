@@ -28,7 +28,8 @@ def test_validity_from_fixed_datasets(eqinfo, tmpdir):
     r = runwphase(eqinfo=eqinfo,
                   output_dir=str(tmpdir), output_dir_can_exist=True,
                   waveforms=waveforms, inventory=inventory,
-                  make_maps=False, make_plots=False)
+                  make_maps=False, make_plots=False,
+                  raise_errors=True)
 
     assert 'MomentTensor' in r
 

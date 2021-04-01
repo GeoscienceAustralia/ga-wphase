@@ -603,13 +603,13 @@ def wpinv(
     logger.debug("Grid size: %d * %d", len(lon_grid), len(lat_grid))
     latlons = [(lat, lon) for lat in lat_grid for lon in lon_grid]
 
-    inputs = [(t_h, t_d, (lat, lon, hypdep), orig, (Ta, Tb), MRF,
-              ObservedDisp, Ntrace, metadata, trlist, greens,
-              True, dict(residuals=False))
-              for lat, lon in latlons]
+    inputs_latlon = [(t_h, t_d, (lat, lon, hypdep), orig, (Ta, Tb), MRF,
+                      ObservedDisp, Ntrace, metadata, trlist, greens,
+                      True, dict(residuals=False))
+                     for lat, lon in latlons]
 
     with ProcessPoolExecutor() as pool:
-        latlon_search = list(pool.map(core_inversion_wrapper, inputs))
+        latlon_search = list(pool.map(core_inversion_wrapper, inputs_latlon))
 
     misfits_latlon = np.array([latlon_search[i][1] for i in range(len(latlons))])
     cenlat, cenlon = latlons[misfits_latlon.argmin()]
@@ -646,7 +646,7 @@ def wpinv(
     output_dic['OL3'] = MT_result(M, misfit, cendep, t_d)
 
     cenloc = (cenlat,cenlon,cendep)
-    return M, ObservedDisp, syn, trlist, Ntrace, cenloc, t_d, latlons, moments, DATA_INFO
+    return M, ObservedDisp, syn, trlist, Ntrace, cenloc, t_d, inputs_latlon, moments, DATA_INFO
 
 
 def MomentRateFunction(t_h, dt):

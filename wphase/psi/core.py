@@ -617,33 +617,8 @@ def wpinv(
            M[5]*GFmatrix[:,4])
 
     logger.info("OL2:")
-    logger.info("Mrr: % e", M[0])
-    logger.info("Mtt: % e", M[1])
-    logger.info("Mpp: % e", M[2])
-    logger.info("Mrt: % e", M[3])
-    logger.info("Mrp: % e", M[4])
-    logger.info("Mtp: % e", M[5])
 
-    logger.info("misfit: %.0f%%", misfit)
-
-    M2 = M*M
-    m0 = np.sqrt(0.5 * (M2[0] + M2[1] + M2[2]) + M2[3] + M2[4] + M2[5])
-    mag = 2./3.*(np.log10(m0)-9.10)
-    logger.info("m0: % e", m0)
-    logger.info("magnitude: %.5f", mag)
-
-    output_dic['OL2'] = {}
-    output_dic['OL2']['Mrr']= M[0]
-    output_dic['OL2']['Mtt']= M[1]
-    output_dic['OL2']['Mpp']= M[2]
-    output_dic['OL2']['Mrt']= M[3]
-    output_dic['OL2']['Mrp']= M[4]
-    output_dic['OL2']['Mtp']= M[5]
-    output_dic['OL2']['misfit']= misfit
-    output_dic['OL2']['m0']= m0
-    output_dic['OL2']['magnitude']= round(mag,1)
-    output_dic['OL2']['depth'] = hypdep
-    output_dic['OL2']['time_delay'] = t_d
+    output_dic['OL2'] = MT_result(M, misfit, hypdep, t_d)
 
     if OL==2:
         return  M, ObservedDisp, syn, trlist, Ntrace, GFmatrix, DATA_INFO
@@ -704,42 +679,9 @@ def wpinv(
 
 
     logger.info("OL3:")
-    logger.info("Mrr: % e", M[0])
-    logger.info("Mtt: % e", M[1])
-    logger.info("Mpp: % e", M[2])
-    logger.info("Mrt: % e", M[3])
-    logger.info("Mrp: % e", M[4])
-    logger.info("Mtp: % e", M[5])
+    output_dic['OL3'] = MT_result(M, misfit, cendep, t_d)
 
-    logger.info("misfit: %.0f%%", misfit)
-
-    M2 = M*M
-    m0 = np.sqrt(0.5*(M2[0]+M2[1]+M2[2])+M2[3]+M2[4]+M2[5])
-    mag = 2./3.*(np.log10(m0)-9.10)
-    logger.info("m0: % e", m0)
-    logger.info("magnitude: %.5f", mag)
     cenloc = (cenlat,cenlon,cendep)
-
-    # QZ
-    output_dic['OL3'] = {}
-    output_dic['OL3']['Mrr']= M[0]
-    output_dic['OL3']['Mtt']= M[1]
-    output_dic['OL3']['Mpp']= M[2]
-    output_dic['OL3']['Mrt']= M[3]
-    output_dic['OL3']['Mrp']= M[4]
-    output_dic['OL3']['Mtp']= M[5]
-    output_dic['OL3']['misfit']= misfit
-    output_dic['OL3']['m0']= m0
-    output_dic['OL3']['magnitude']= round(mag,1)
-    output_dic['OL3']['depth'] = cendep
-    output_dic['OL3']['time_delay'] = t_d
-
-    '''
-    print "****************   output_dic   *****************"
-    print output_dic
-    print "****************   output_dic   *****************"
-    '''
-
     return M, ObservedDisp, syn, trlist, Ntrace, cenloc, t_d, latlons, moments, DATA_INFO
 
 
@@ -1424,3 +1366,30 @@ def ltrim(data, starttime, delta):
         return np.concatenate((gap, data), axis=-1)
     else:
         return data[..., i_of:]
+
+def MT_result(M, misfit, depth, t_d):
+    logger.info("Mrr: % e", M[0])
+    logger.info("Mtt: % e", M[1])
+    logger.info("Mpp: % e", M[2])
+    logger.info("Mrt: % e", M[3])
+    logger.info("Mrp: % e", M[4])
+    logger.info("Mtp: % e", M[5])
+    logger.info("misfit: %.0f%%", misfit)
+    M2 = M*M
+    m0 = np.sqrt(0.5 * (M2[0] + M2[1] + M2[2]) + M2[3] + M2[4] + M2[5])
+    mag = 2./3.*(np.log10(m0)-9.10)
+    logger.info("m0: % e", m0)
+    logger.info("magnitude: %.5f", mag)
+    return {
+        'Mrr': M[0],
+        'Mtt': M[1],
+        'Mpp': M[2],
+        'Mrt': M[3],
+        'Mrp': M[4],
+        'Mtp': M[5],
+        'misfit': misfit,
+        'm0': m0,
+        'magnitude': round(mag, 1),
+        'depth': depth,
+        'time_delay': t_d,
+    }

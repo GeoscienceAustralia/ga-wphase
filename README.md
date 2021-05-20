@@ -152,7 +152,7 @@ sudo -E ./run-or-build-container.sh run bash
 sudo -E ./run-or-build-container.sh run pytest
 
 # to run the same example as above:
-sudo -E ./run-or-build-container.sh wphase \
+sudo -E ./run-or-build-container.sh run wphase \
     --evid ga2020yskxhe \
     --lat 5.2 \
     --lon 125.47 \

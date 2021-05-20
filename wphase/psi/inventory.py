@@ -256,7 +256,13 @@ def remove_gappy_traces(st):
     """Given an obspy Stream, remove any traces with gaps.
 
     We do this by first merging, then looking for duplicate waveformStreamIDs."""
-    st = st.merge()
+    try:
+        st = st.merge()
+    except Exception as e:
+        # If there are traces with the same stream ID but different sampling
+        # rates, Stream.merge() throws a raw Exception!
+        logger.warning("Failed to merge traces: %s", e)
+
     trlist_data = [tr.id for tr in st]
     rep_ids = [trid for trid, nrep in list(Counter(trlist_data).items())
                if nrep > 1]

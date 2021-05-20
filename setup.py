@@ -49,7 +49,7 @@ setup(
         'backports.functools_lru_cache; python_version < "3.0.0"',
         'future',
         'h5py',
-        'matplotlib',
+        'matplotlib', # obspy imports this anyway, so we don't relegate it to [plotting]
         'numpy',
         'obspy',
         'pyinstrument==0.13.1',
@@ -57,6 +57,7 @@ setup(
         'scipy>=0.16.0',
     ],
     extras_require = {
-        'aws': ['boto3']
+        'aws': ['boto3'],
+        'plotting': ['cartopy'],
     }
 )

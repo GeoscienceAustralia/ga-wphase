@@ -26,41 +26,8 @@ except Exception:
     aux_plane = beachball.aux_plane
 
 from wphase.psi import seismoutils
-from wphase.psi.plotutils import plot_field as _plot_field, stacov
+from wphase.psi.plotutils import plot_field, stacov
 from wphase import settings
-
-
-
-def plot_field(
-    latlons,
-    field,
-    plot_type='scatter',
-    show_lats=True,
-    show_lons=True,
-    ax=None,
-    clevs=None,
-    **kwargs):
-    '''
-    Plot the locations considered in the grid search. This is a wrapper for
-    :py:func:`wphase.psi.plotutils.plot_field`, which simply drops the argument
-    *topofile* (i.e. sets it to *None*), which we will never use. Please see
-    documentation of that function for details.
-    '''
-
-    kwargs['topofile'] = None
-
-    return _plot_field(
-        latlons,
-        field,
-        plot_type,
-        show_lats,
-        show_lons,
-        ax,
-        clevs,
-        **kwargs)
-
-
-
 
 
 if settings.PROFILE_WPHASE:
@@ -454,31 +421,15 @@ def post_process_wpinv(
             misfits_depth_mat =  misfits_depth_mat.sum(axis=1)
             scaled_field = misfits_depth_mat/misfits_depth_mat.min()
 
-            fig = plt.figure()
-            #ax =
-            fig.add_axes((0.05, 0.18, 0.95, 0.75))
-            grid_plot = plot_field(latlon_depth_grid,scaled_field,
-                          s=100./scaled_field**2,c=scaled_field,
-                          topofile = None, zorder=999)
-            fig = grid_plot['fig']
-            scatter = grid_plot['field']
-            #ax = grid_plot['ax']
-            fig.colorbar(scatter, cax=None, orientation='vertical')
-            m = grid_plot['map']
-            eplat, eplon = eqinfo['lat'],eqinfo['lon']
-            cenlat, cenlon = cenloc[0], cenloc[1]
-            m.scatter(eplon,eplat,s = 1000,c='y',marker="*",alpha=1.,latlon=True, zorder=1000)
-            m.scatter(cenlon,cenlat,s = 1000,c='w',marker="*",alpha=1.,latlon=True, zorder=1001)
-            grid_legend="Colorbar indicates normalized centroid misfit (1 is minimum)\n" +\
-                    "Yelow star: Hypocenter location\n" +\
-                    "White star: optimal centroid location"
-            fig.text(.5, -.05, grid_legend, horizontalalignment='center')
             gridSearchPrefix = os.path.join(working_dir, settings.WPHASE_GRID_SEARCH_PREFIX)
-            plt.savefig(gridSearchPrefix, bbox_inches='tight')
-            plt.close('all')
-            #np.savetxt('PS_grid_misfits.txt', scaled_field)
-            #np.savetxt('PS_grid_latlon.txt', latlon_depth_grid)
-
+            plot_field((eqinfo['lon'], eqinfo['lat']),
+                       (cenloc[1], cenloc[0]),
+                       latlon_depth_grid,
+                       scaled_field,
+                       s=100./scaled_field**2,
+                       c=scaled_field,
+                       zorder=999,
+                       filename=gridSearchPrefix)
     else:
         results = None
     # Event

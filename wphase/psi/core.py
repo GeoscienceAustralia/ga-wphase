@@ -822,6 +822,11 @@ def RTdeconv(
         # zero erros in RTdeconv due either this or G being equal to zero
         raise RTdeconvError("Negative or sampling rate, skipping: {}".format(tr.id))
 
+    if len(tr.data) <= 2:
+        # Traces of length <=2 were throwing runtime exceptions; so we need to
+        # explicitly skip these traces.
+        raise RTdeconvError("Trace too short to deconvolve, skipping: {}".format(tr.id))
+
     data = np.array(tr.data,dtype='float')
     sta  = tr.stats.station
 

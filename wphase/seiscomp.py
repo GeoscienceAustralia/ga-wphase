@@ -49,7 +49,7 @@ def createObjects(item, agency, evid=None, with_notifiers=False, logging=Logging
     ci = DM.CreationInfo()
     ci.setCreationTime(time)
     ci.setAgencyID(agency)
-    ci.setAuthor(item.author.encode())
+    ci.setAuthor(item.author)
 
     originTime = DM.TimeQuantity(
         datetime_to_seiscomp(item.originTime)
@@ -83,7 +83,7 @@ def createObjects(item, agency, evid=None, with_notifiers=False, logging=Logging
         mag.setMagnitude(DM.RealQuantity(item.mag))
         mag.setCreationInfo(ci)
         mag.setOriginID(derivedOrigin.publicID())
-        mag.setType(item.mag_type.encode())
+        mag.setType(item.mag_type)
         mag.setStationCount(item.usedStationCount)
         mag.setMethodID("wphase")
     except Exception as e:

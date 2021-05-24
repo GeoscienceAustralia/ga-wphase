@@ -11,6 +11,15 @@ import matplotlib.colors as mcols
 from scipy.interpolate import griddata
 from obspy.imaging.beachball import beach
 
+try:
+    # cartopy is an optional dependency
+    from cartopy import crs
+    from cartopy.feature import NaturalEarthFeature
+except ImportError:
+    pass
+
+from wphase import logger
+
 
 
 def get_boundaries(lats,lons, xpnd=0.7):
@@ -61,8 +70,6 @@ def plot_field(
     lats, lons = latlons.T
     boundaries = get_boundaries(lats, lons, xpnd = 0.7)
 
-    from cartopy import crs
-    from cartopy.feature import NaturalEarthFeature
     proj = crs.Mercator(central_longitude=centroid[0])
     coords = crs.PlateCarree()
 
@@ -100,9 +107,6 @@ def plot_field(
 
 def stacov(location, lats, lons, mt=None, filename=None, fig=None):
     """Plot a station coverage map."""
-    # Local import because cartopy is an optional dependency
-    from cartopy import crs
-    from cartopy.feature import NaturalEarthFeature
 
     (elat, elon) = location
     if not fig:

@@ -11,14 +11,11 @@ warning* by Kanamori and Rivera, 2008](https://doi.org/10.1111/j.1365-246X.2008.
 
 ## Requirements
 
-- Python 2.7 (with various libraries from PyPI).
-  - Python 3 is now also tentatively supported.
+- Python 2.7+ or 3.6+ (with various PyPI dependencies)
 - Green's functions (see the section below)
 - Optional:
-  - SeisComP3 with python libraries (to use the CLI script to push results into
-    a SeisComP3 system/convert results to SCML)
-  - The basemap matplotlib toolkit (to plot maps showing station distribution
-    and illustrating the grid search)
+  - SeisComP with python libraries (to use the CLI script to push results into
+    a SeisComP system/convert results to SCML)
 
 
 ## Green's Functions
@@ -53,13 +50,7 @@ stored inside a HDF5 file.
 
 ## Direct Installation
 
-First, install the matplotlib basemap toolkit following [their
-instructions](https://github.com/matplotlib/basemap).  You can skip this step
-if you don't want to use the map plotting functionality.
-
-The rest of the python dependencies can be installed automatically from PyPI.
-
-From the same directory as this README lives in:
+From the same directory this README lives in:
 
 ```sh
 pip install .
@@ -71,11 +62,10 @@ If you want to use it 'in place', use develop mode:
 pip install -e .
 ```
 
-If obspy has issues installing, you might need to install numpy first:
+If obspy has issues installing, you might need to install some dependencies first:
 
 ```sh
-pip install wheel
-pip install numpy
+pip install wheel Cython numpy
 pip install .
 ```
 
@@ -96,11 +86,11 @@ You can then run W-Phase in a couple of ways:
 
 - Using the command-line script [`wphase`](scripts/wphase), which takes its
   input as (a lot of!) command-line arguments and can send the basic results
-  directly to a SeisComP3 messaging system, and the visualizations to an Amazon
+  directly to a SeisComP messaging system, and the visualizations to an Amazon
   S3 bucket.
 
   For example, if you have an FDSN server at http://localhost:8081 and a
-  SeisComP3 messaging system (spread) at localhost:4803, the following script
+  SeisComP4+ messaging system at localhost:18180, the following script
   would attempt to solve for the centroid moment tensor of an event at the
   given location and time, and if successful, send the results to seiscomp
   under the given event ID.
@@ -114,31 +104,30 @@ wphase \
     --time '2020-12-15T23:22:01Z' \
     --outputs /tmp/wphase-outputs \
     --server http://localhost:8081 \
-    --host localhost:4803
+    --host localhost:18180
 ```
 
 ## Using Docker
 
 If you're running Linux with Docker and curl installed, you should be able to
-build docker containers for development and production simply by running (as root)
-`./run-or-build-container.sh build`. By default, this will build two very
-similar containers: `wphase` and `wphase-dev`.
+build a docker container simply by running (as root)
+`./run-or-build-container.sh build`.
 
-### `wphase-dev`
+### Developing on Docker
 
-This container is designed for development use; it does not have
-wphase installed, just all the dependencies. I mount the current folder at
-*/wphase*.  when launching the container (which is done for you if you use
-`run-or-build-container.sh`).
+While the container image includes the complete W-Phase application, it can
+easily be used for development by mounting in your working copy of the W-Phase
+source.  
 
 When you launch an interactive bash session on the container (e.g. using the
 `run-or-build-container.sh` script), if wphase is mounted at `/wphase` then it
 will be automatically built and installed in development mode.
 
+This is done for you if you use `./run-or-build-container.sh run`.
+
 To use this script as-is, you'll need your greens functions to be stored at
 `~/wphase/greens`; but you should be able to modify the script to suit your
 needs.
-
 
 To start some process inside the container:
 
@@ -160,7 +149,7 @@ sudo -E ./run-or-build-container.sh run wphase \
     --time '2020-12-15T23:22:01Z' \
     --outputs /tmp/wphase-outputs \
     --server http://localhost:8081 \
-    --host localhost:4803
+    --host localhost:18180
 ```
 
 Since the `./run-or-build-container.sh` script uses [host
@@ -169,13 +158,13 @@ still be able to contact the FDSN and Spread servers running on your host.
 Alternatively, you could of course use some other Docker networking scheme and
 swap out localhost for an appropriate hostname or IP.
 
-### `wphase-prod`
+### Using Docker in production
 
-This container is designed for production use: it includes a fully-built
-version of wphase and directly invokes the wphase script by default. It does
-*not* include the greens functions database (since these are typically huge),
-so you'll still need to mount these; and you'll also need to mount a directory
-to `/outputs`, where the output files will be stored.
+The container image is also ready for production use: it includes a fully-built
+version of wphase and directly invokes the wphase script as its default
+entrypoint default. It does *not* include the greens functions database (since
+these are typically huge), so you'll still need to mount these; and you'll also
+need to mount a directory to `/outputs`, where the output files will be stored.
 
 You can use the `run-wphase` directive to invoke the production container,
 automatically handling the directory mounting:
@@ -189,7 +178,7 @@ sudo -E ./run-or-build-container.sh run-wphase \
     --depth 42 \
     --time '2020-12-15T23:22:01Z' \
     --server http://localhost:8081 \
-    --host localhost:4803
+    --host localhost:18180
 ```
 
 In this example, the output files would then be available at
@@ -210,16 +199,14 @@ You can get a full list of options by invoking `run-wphase` with `--help`.
 I extracted this code from our private repository and ran a quick clean-up
 pass, but many more improvements are possible:
 
-- Add SeisComP 4+ support to [scripts/wphase](scripts/wphase).
 - Improve the Python API to return the results (focal mech,
   derived origin, etc) in ObsPy or SeisComP data structures instead of the
   current nested dictionaries?
-- Migrate from basemap to cartopy.
 - Look into replacing the libtau fortran code with obspy's travel time model.
     - When this code was first developed, apparently the latter was too slow; but
       things might have improved or there might be optimizations we can make.
-- If both of the two above points are achieved, I think we could relicense
-  under the more permissive Apache license (GA's preference).
+    - I think this would allows us to relicense
+      under the more permissive Apache license (GA's preference).
 - Strip out any remaining dead code, then refactor what's left and improve the
   documentation.
 - Create a fully-integrated SeisComP plugin/daemon that watches the messaging
@@ -231,7 +218,7 @@ pass, but many more improvements are possible:
 
 ## License
 
-Copyright (C) 2020 Geoscience Australia
+Copyright (C) 2021 Geoscience Australia
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License

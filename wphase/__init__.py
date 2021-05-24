@@ -73,3 +73,5 @@ def runwphase(
         raise Exception(wphase_results[settings.WPHASE_ERROR_STACKTRACE_KEY])
 
     return wphase_results
+
+__all__ = ['runwphase']

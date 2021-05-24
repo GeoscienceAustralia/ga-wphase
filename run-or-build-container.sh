@@ -13,13 +13,13 @@ mode="$1"
 shift
 declare -a cmds=("$@")
 
-DEV_CONTAINER_NAME=wphase-dev
-PROD_CONTAINER_NAME=wphase
+IMAGE_NAME=wphase
 BASEMAP_ARCHIVE_NAME=basemap.tar.gz
 WPHASE_CONFIG_BUCKET_URL=
 WPHASE_ROOT=/wphase
 WPHASE_HOME="$WPHASE_ROOT"/app
 WPHASE_WORKING_ROOT=/var/tmp/wphase
+WPHASE_OUTPUT_DIR="${WPHASE_OUTPUT_DIR-/tmp/wphase-output}"
 WPHASE_GREENS_FUNCTIONS_DIR="$WPHASE_ROOT"/greens
 WPHASE_GREENS_FUNCTIONS_FILE=gfs_1.hdf5
 
@@ -37,47 +37,41 @@ if [ "$mode" == "build" ]; then
         fi
     fi
 
-    build() {
-        target="$1"
-        name="$2"
-        docker build \
-            -t "$name" \
-            -f ./docker/Dockerfile \
-            --build-arg BASEMAP_ARCHIVE_NAME="$BASEMAP_ARCHIVE_NAME" \
-            --build-arg WPHASE_GREENS_FUNCTIONS_DIR="$WPHASE_GREENS_FUNCTIONS_DIR" \
-            --build-arg WPHASE_GREENS_FUNCTIONS_FILE="$WPHASE_GREENS_FUNCTIONS_FILE" \
-            --build-arg ARG_WPHASE_WEB_OUTPUTS_ROOT="$WPHASE_WORKING_ROOT"/web_outputs \
-            --build-arg ARG_WPHASE_SAVED_DATASETS_ROOT="$WPHASE_WORKING_ROOT"/saved_datasets \
-            --build-arg ARG_WPHASE_TEST_DATASETS_ROOT="$WPHASE_WORKING_ROOT"/test_data \
-            --build-arg ARG_WPHASE_GREENS_FUNCTIONS="$WPHASE_GREENS_FUNCTIONS_DIR"/"$WPHASE_GREENS_FUNCTIONS_FILE" \
-            --build-arg WPHASE_HOME="$WPHASE_HOME" \
-            --target "$target" \
-            .
-    }
-    build dev $DEV_CONTAINER_NAME
-    build prod $PROD_CONTAINER_NAME
+    docker build \
+        -t "$IMAGE_NAME" \
+        -f ./docker/Dockerfile \
+        --build-arg BASEMAP_ARCHIVE_NAME="$BASEMAP_ARCHIVE_NAME" \
+        --build-arg WPHASE_GREENS_FUNCTIONS_DIR="$WPHASE_GREENS_FUNCTIONS_DIR" \
+        --build-arg WPHASE_GREENS_FUNCTIONS_FILE="$WPHASE_GREENS_FUNCTIONS_FILE" \
+        --build-arg ARG_WPHASE_WEB_OUTPUTS_ROOT="$WPHASE_WORKING_ROOT"/web_outputs \
+        --build-arg ARG_WPHASE_SAVED_DATASETS_ROOT="$WPHASE_WORKING_ROOT"/saved_datasets \
+        --build-arg ARG_WPHASE_TEST_DATASETS_ROOT="$WPHASE_WORKING_ROOT"/test_data \
+        --build-arg ARG_WPHASE_GREENS_FUNCTIONS="$WPHASE_GREENS_FUNCTIONS_DIR"/"$WPHASE_GREENS_FUNCTIONS_FILE" \
+        --build-arg WPHASE_HOME="$WPHASE_HOME" \
+        .
 
 elif [ "$mode" == "run" ]; then
     if [ "${#cmds[@]}" != 0 ]; then
         cmd="${cmds[@]}"
-        cmds=(bash -lc "$cmd")
+        cmds=(bash -lc "$cmd") # this is an array, not a subshell!
     fi
-    docker run -it --rm \
+    docker run -it --entrypoint /bin/bash --rm \
         --mount type=bind,source=$HOME/wphase/greens,target="$WPHASE_GREENS_FUNCTIONS_DIR",readonly=true \
         --mount type=bind,source=`pwd`,target="$WPHASE_HOME" \
+        --mount type=bind,source="$WPHASE_OUTPUT_DIR",target=/tmp/wphase-output,readonly=false \
         --network=host \
         -e "WPHASE_HOME=$WPHASE_HOME" \
-        "$DEV_CONTAINER_NAME" \
-        "${cmds[@]}"
+        "$IMAGE_NAME" \
+        "/reinstall-wphase-and-run" "${cmds[@]}"
 elif [ "$mode" == "run-wphase" ]; then
-    mkdir -p /tmp/wphase-output
+    mkdir -p $WPHASE_OUTPUT_DIR
     docker run -it --rm \
         --mount type=bind,source=$HOME/wphase/greens,target="$WPHASE_GREENS_FUNCTIONS_DIR",readonly=true \
-        --mount type=bind,source=/tmp/wphase-output,target="/tmp/wphase-output",readonly=false \
+        --mount type=bind,source="$WPHASE_OUTPUT_DIR",target=/outputs,readonly=false \
         --network=host \
         -e "WPHASE_HOME=$WPHASE_HOME" \
-        "$PROD_CONTAINER_NAME" \
-        --outputs /tmp/wphase-output \
+        "$IMAGE_NAME" \
+        --outputs /outputs \
         "${cmds[@]}"
 else
     echo 'First argument must be either "build", "run" or "run-wphase".'

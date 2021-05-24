@@ -1,17 +1,38 @@
 ################################################
-# Base image with all dependencies and seiscomp3
-FROM centos:centos7 AS base
+# Base image with all dependencies and seiscomp
+FROM ubuntu:20.04 AS base
 
-# Seiscomp3 dependencies:
-RUN yum install -y \
-    boost \
-    flex \
-    libxml2 \
-    realpath \
-    && yum clean all
+# SeisComP + W-Phase dependencies from apt:
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        build-essential \
+        curl \
+        gfortran \
+        libboost-filesystem1.71.0 \
+        libboost-iostreams1.71.0 \
+        libboost-program-options1.71.0 \
+        libboost-regex1.71.0 \
+        libboost-system1.71.0 \
+        libboost-thread1.71.0 \
+        libgeos-dev \
+        libmariadb3 \
+        libmysqlclient21 \
+        libncurses5 \
+        libpq5 \
+        libproj-dev \
+        libssl1.1 \
+        libxml2 \
+        proj-bin \
+        proj-data \
+        python3-dev \
+        python3-pip \
+        python3-tk \
+        python3-twisted \
+        python3-dateutil \
+    && rm -rf /var/lib/apt/lists/*
+
 
 # Install seiscomp3:
-ARG SEISCOMP_TARBALL_URL=https://www.seiscomp.de/seiscomp3/downloader/seiscomp3-jakarta-2020.330.02-centos7-x86_64.tar.gz
+ARG SEISCOMP_TARBALL_URL=https://www.seiscomp.de/downloader/seiscomp-4.5.0-ubuntu20.04-x86_64.tar.gz
 RUN cd /opt/ && curl -s $SEISCOMP_TARBALL_URL | tar xfz -
 
 ARG LOCAL_INSTALL_FOLDER=/tmp
@@ -27,30 +48,21 @@ ENV WPHASE_SAVED_DATASETS_ROOT="$ARG_WPHASE_SAVED_DATASETS_ROOT"
 ENV WPHASE_TEST_DATASETS_ROOT="$ARG_WPHASE_TEST_DATASETS_ROOT"
 ENV WPHASE_GREENS_FUNCTIONS="$ARG_WPHASE_GREENS_FUNCTIONS"
 
-COPY docker/$BASEMAP_ARCHIVE_NAME "$LOCAL_INSTALL_FOLDER"/"$BASEMAP_ARCHIVE_NAME"
-COPY docker/requirements.txt /requirements.txt
-
-# The installation scripts for dependencies are separated here because they
-# take a while and don't change very often, so it's easiest to keep them
-# separate for quick development.
-COPY docker/install_dependencies.sh "$LOCAL_INSTALL_FOLDER"/install_dependencies.sh
-RUN "$LOCAL_INSTALL_FOLDER"/install_dependencies.sh
-
 # Allow seiscomp to run as root:
-RUN sed -i 's/asRoot = False/asRoot = True/' /opt/seiscomp3/bin/seiscomp-control.py
+RUN sed -i 's/asRoot = False/asRoot = True/' /opt/seiscomp/bin/seiscomp-control.py
 
 # Configure environment for seiscomp:
-ENV SEISCOMP_ROOT="/opt/seiscomp3" \
-    PATH="/opt/seiscomp3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-    LD_LIBRARY_PATH="/opt/seiscomp3/lib" \
-    PYTHONPATH="/opt/seiscomp3/lib/python" \
-    MANPATH="/opt/seiscomp3/share/man"
+ENV SEISCOMP_ROOT="/opt/seiscomp" \
+    PATH="/opt/seiscomp/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    LD_LIBRARY_PATH="/opt/seiscomp/lib" \
+    PYTHONPATH="/opt/seiscomp/lib/python" \
+    MANPATH="/opt/seiscomp/share/man"
 
 # Configure seiscomp completion in bash:
-RUN echo "source /opt/seiscomp3/share/shell-completion/seiscomp.bash" >> /root/.bashrc
+RUN echo "source /opt/seiscomp/share/shell-completion/seiscomp.bash" >> /root/.bashrc
 
 # Let seiscomp utilities run without requiring database dependencies:
-RUN echo 'core.plugins = ""' > /opt/seiscomp3/etc/global.cfg
+RUN echo 'core.plugins = ""' > /opt/seiscomp/etc/global.cfg
 
 # create required folders for wphase
 RUN install -g "$(id -gn)" -o "$(id -un)" -d \

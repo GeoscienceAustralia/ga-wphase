@@ -33,13 +33,13 @@ class LogHandler(logging.Handler):
     def emit(self, record):
         msg = self.format(record)
         if record.levelname == 'DEBUG':
-            Logging.debug(msg.encode())
+            Logging.debug(msg)
         elif record.levelname == 'INFO':
-            Logging.info(msg.encode())
+            Logging.info(msg)
         elif record.levelname == 'WARNING':
-            Logging.warning(msg.encode())
+            Logging.warning(msg)
         else:
-            Logging.error(msg.encode())
+            Logging.error(msg)
 
 # Send W-Phase logs and python warnings to seiscomp logs
 import wphase.logger
@@ -157,12 +157,12 @@ class WPhase(Application):
             "The name of the region in which the event occured.")
         self.commandline().addStringOption(
             "Input",
-            "evid",
-            "First part of the key under which to write the events to S3.")
+            "evid,E",
+            "Event ID.")
         self.commandline().addStringOption(
             "Input",
             "resultid",
-            "The second part of the key under which to write the events to S3.")
+            "A string that (along with the evid) will uniquely identify this particular w-phase result. ")
         self.commandline().addStringOption(
             "Input",
             "notificationemail",
@@ -246,10 +246,7 @@ class WPhase(Application):
 
 
     def validateParameters(self):
-        """
-        SeisComP3 specific method.
-        """
-
+        """Called by the seiscomp client Application setup."""
         if not Application.validateParameters(self):
             return False
 

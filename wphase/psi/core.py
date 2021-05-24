@@ -487,7 +487,7 @@ def wpinv(
             Ntrace.append(len(tr))
     trlist = trlist2[:]
 
-    'number of traces for OL2 {}'.format(len(trlist))
+    logger.info('number of traces for OL2: %d', len(trlist))
 
     #### Inversion:
     # Search for the optimal t_d

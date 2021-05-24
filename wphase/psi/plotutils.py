@@ -127,13 +127,13 @@ def stacov(location, lats, lons, mt=None, filename=None, fig=None):
     from warnings import warn
     if mt is not None:
         projected_xy = proj.transform_point(elon, elat, coords)
-        print(f"eloc={elon}, {elat}; projected={projected_xy}")
         bball = beach(mt, xy=(0,0), linewidth=1, facecolor='r', zorder=10000,
                       width=8e5)
         ax.add_collection(bball)
     else:
-        pwarnrint("no mt")
+        logger.warning("No MT provided; station coverage map will have no beachball")
         ax.plot(elon, elat, 'y*', markersize=40, transform=coords)
 
     if filename:
         fig.savefig(filename, dpi=100, transparent=True, bbox_inches='tight')
+        logger.warning("Wrote %s successfully", filename)

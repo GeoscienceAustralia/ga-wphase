@@ -65,7 +65,6 @@ class GreensFunctions(object):
     @lru_cache(maxsize=None)
     def _closest_depth(self, depth):
         idx = np.argmin(np.abs(self.depths - depth))
-        logger.debug("Resolved depth %.1f to %s", depth, self._hdirs[idx])
         return self._hdirs[idx] + '/'
 
     def _get_array(self, path):

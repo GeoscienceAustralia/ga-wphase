@@ -15,17 +15,8 @@ import json
 import numpy as np
 
 from wphase import settings
+from wphase.result import jsonencode_np
 from wphase._runner_fdsn import runwphase as wphase_runner
-
-def jsonencode_np(obj):
-    if isinstance(obj, np.integer):
-        return int(obj)
-    elif isinstance(obj, np.floating):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    else:
-        return obj
 
 def runwphase(
     output_dir,

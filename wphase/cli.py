@@ -16,7 +16,7 @@ from seiscomp3.Client import Application
 
 from wphase import runwphase, settings
 from wphase.email import send_email
-from wphase.result import WPhaseParser, FMItem
+from wphase.result import WPhaseParser, FMItem, jsonencode_np
 from wphase.seiscomp import createAndSendObjects, writeSCML
 
 
@@ -379,7 +379,7 @@ class WPhase(Application):
                         with open(os.path.join(
                                 self.output,
                                 settings.WPHASE_OUTPUT_FILE_NAME), 'w') as of:
-                            json.dump(res, of)
+                            json.dump(res, of, default=jsonencode_np)
                     except Exception as e:
                         # not sure how we would get here, but we just don't want
                         # to stop the rest of processing

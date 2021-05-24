@@ -4,6 +4,8 @@ from builtins import object
 from datetime import datetime
 import json
 
+import numpy as np
+
 SC3_TIME_FORMAT="%Y-%m-%d %H:%M:%S.%f"
 class FMItem(object):
     """Represents the focal mechanism resulting from a w-phase run in python-native types.""" 
@@ -121,3 +123,13 @@ class WPhaseParser(object):
 
             except Exception as e:
                 raise ValueError("Failed to load json data: {}".format(e))
+
+def jsonencode_np(obj):
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj

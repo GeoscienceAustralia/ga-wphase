@@ -203,11 +203,11 @@ def get_waveforms(
 
     if waveforms:
         # waveforms provided as input, just clean them
-        logger.info('{} traces provided as input'.format(len(waveforms)))
+        logger.info('%d traces provided as input', len(waveforms))
         st = waveforms
     else:
         # fetch waveforms from server
-        logger.info('fetching data from {}'.format(client.base_url))
+        logger.info('fetching data from %s', client.base_url)
         st = Stream()
 
         # Create the subsets for each request
@@ -226,12 +226,12 @@ def get_waveforms(
             try:
                 st += client.get_waveforms_bulk(chunk)
             except Exception as e:
-                logger.error('Problem with request from server: {}\n{}'.format(client.base_url, str(e)))
+                logger.error('Problem with request from server %s:\n%s', client.base_url, str(e))
                 continue
 
     # Removing gappy traces (that is channel ids that are repeated)
     st = remove_gappy_traces(st)
-    logger.info('{} traces remaining after throwing out gappy ones'.format(len(st)))
+    logger.info('%s traces remaining after throwing out gappy ones', len(st))
 
     # Decimating BH channels. This can be done in parallel.
     if decimate:
@@ -240,7 +240,7 @@ def get_waveforms(
             try:
                 decimateTo1Hz(tr)
             except CannotDecimate as e:
-                logger.info("Removing trace {} - {}".format(tr.id, e))
+                logger.info("Removing trace %s - %s", tr.id, e)
                 st.remove(tr)
 
         # Creating contigous arrays for the traces. This may speed up things later.

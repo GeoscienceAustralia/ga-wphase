@@ -209,7 +209,7 @@ def runwphase(
         if use_only_z_components:
             streams = streams.select(component = 'Z')
 
-            logger.info('{} traces remaining after restricting to Z'.format(len(streams)))
+            logger.info('%d traces remaining after restricting to Z', len(streams))
 
         meta_t_p.update(meta_t_p_)
 

@@ -293,10 +293,8 @@ def wpinv(
         misfit = 100*np.linalg.norm(AmpfromPAZ-AmpfromCOEFF) \
                 / np.linalg.norm(AmpfromPAZ)
 
-        if misfit >  response_misfit_tol:
-            logger.warning('Bad fitting for response. Skipping:\n{}\t {: E}\n'.format(
-                    tr.id,
-                    misfit))
+        if misfit > response_misfit_tol:
+            logger.warning('Bad fitting for response (misfit=%e). Skipping %s', misfit, tr.id)
             continue
 
         # tr.data will cointain the deconvolved and filtered displacements.

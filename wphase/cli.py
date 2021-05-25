@@ -14,7 +14,7 @@ from obspy.core import UTCDateTime
 from seiscomp3 import DataModel as DM, Logging, IO, Core
 from seiscomp3.Client import Application
 
-from wphase import runwphase, settings
+from wphase import logger, runwphase, settings
 from wphase.email import send_email
 from wphase.result import WPhaseParser, FMItem, jsonencode_np
 from wphase.seiscomp import createAndSendObjects, writeSCML
@@ -28,7 +28,7 @@ APPLICATION_NAME = 'wphase'
 LOG_FILE_NAME = '{}/.seiscomp3/log/{}.log'.format(
     os.environ['HOME'], APPLICATION_NAME)
 
-class LogHandler(logging.Handler):
+class LogRelay(logging.Handler):
     """Handler that forwards a python logger to seiscomp logs"""
     def emit(self, record):
         msg = self.format(record)
@@ -42,13 +42,12 @@ class LogHandler(logging.Handler):
             Logging.error(msg)
 
 # Send W-Phase logs and python warnings to seiscomp logs
-import wphase.logger
-logger = wphase.logger.getLogger()
-logger.setLevel(logging.DEBUG)
-logger.addHandler(LogHandler())
+_logger = logger.getLogger()
+_logger.setLevel(logging.DEBUG)
+_logger.addHandler(LogRelay(level=logging.DEBUG))
 wlogger = logging.getLogger('py.warnings')
 wlogger.setLevel(logging.WARNING)
-wlogger.addHandler(LogHandler())
+wlogger.addHandler(LogRelay(level=logging.WARNING))
 logging.captureWarnings(True)
 
 class WPhase(Application):
@@ -276,7 +275,7 @@ class WPhase(Application):
                     'dep' : depth,
                     'time': UTCDateTime(self.commandline().optionString("time"))}
             except Exception:
-                wphase.logger.error('You must provide either lat/lon/time or a JSON payload')
+                logger.error('You must provide either lat/lon/time or a JSON payload')
                 return False
 
             getter('sourcezone')
@@ -319,7 +318,7 @@ class WPhase(Application):
             if self.write_s3 and (
                     self.evid is None or \
                     self.bucket_name is None):
-                wphase.logger.error('attempt to write to s3, but did not provide evid and bucket name.')
+                logger.error('attempt to write to s3, but did not provide bucket name.')
                 return False
 
             if self.notificationemail is not None and (
@@ -328,7 +327,7 @@ class WPhase(Application):
                     self.evid is None or \
                     self.resultid is None
                     ):
-                wphase.logger.error('cannot send email.')
+                logger.error('cannot send email.')
                 return False
 
         return True
@@ -347,7 +346,7 @@ class WPhase(Application):
 
         item = None
         res = None
-        parser = WPhaseParser(wphase.logger.info)
+        parser = WPhaseParser(logger.info)
 
         Logging.enableConsoleLogging(Logging.getGlobalChannel("error"))
         wphase_failed = False
@@ -356,7 +355,7 @@ class WPhase(Application):
             self.eqinfo['id'] = self.evid
         if self.filename is None:
             try:
-                wphase.logger.info("Starting W-Phase.")
+                logger.info("Starting W-Phase.")
                 res = runwphase(
                     output_dir=self.output,
                     server=self.server,
@@ -366,7 +365,7 @@ class WPhase(Application):
                     output_dir_can_exist=self.overwrite)
             except Exception:
                 from traceback import format_exc
-                wphase.logger.error('failed to run wphase: {}'.format(format_exc()))
+                logger.error('failed to run wphase: %s', format_exc())
                 wphase_failed = True
             else:
                 if self.evid is not None:
@@ -380,37 +379,37 @@ class WPhase(Application):
                     except Exception as e:
                         # not sure how we would get here, but we just don't want
                         # to stop the rest of processing
-                        wphase.logger.error('failed to add event id to event: {}'.format(e))
+                        logger.error('failed to add event id to event: %s', e)
 
                 try:
                     try: res_dict = res.as_dict()
                     except Exception: res_dict = res
                     item = parser.read(json_data=res_dict)
                 except Exception as e:
-                    wphase.logger.error('failed to parse event JSON for SC3: {}'.format(e))
+                    logger.error('failed to parse event JSON for SC3: %s', e)
                     item = None
 
         else:
             try:
                 item = parser.read(filename=self.filename)
             except Exception as e:
-                wphase.logger.error('failed parse event JSON for SC3: {}'.format(e))
+                logger.error('failed parse event JSON for SC3: %s', e)
 
         if item is not None:
             try:
                 objs = createAndSendObjects(item, self.connection(),
-                                            evid=self.evid, logging=wphase.logger,
+                                            evid=self.evid, logging=logger,
                                             agency=self.agency)
             except Exception as e:
-                wphase.logger.error('failed create objects for SC3: {}'.format(e))
+                logger.error('failed create objects for SC3: %s', e)
             else:
                 try:
                     # write output to file
                     filename = os.path.join(self.output, 'sc3.xml')
                     writeSCML(filename, objs)
-                    wphase.logger.info("Stored results in SCML as {}".format(filename))
+                    logger.info("Stored results in SCML as %s", filename)
                 except Exception as e:
-                    wphase.logger.error('failed write SCML to file: {}'.format(e))
+                    logger.error('failed write SCML to file: %s', e)
 
 
         if self.write_s3:
@@ -426,9 +425,9 @@ class WPhase(Application):
                     self.evid,
                     self.resultid,
                     [(LOG_FILE_NAME, 'sc3.log')],
-                    wphase.logger.error)
+                    logger.error)
             except Exception as e:
-                wphase.logger.error('failed write to S3: {}'.format(e))
+                logger.error('failed write to S3: %s', e)
             finally:
                 # since we may do more runs, remove the log so we don't
                 # contaminate later runs with info for this run

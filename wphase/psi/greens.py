@@ -50,7 +50,7 @@ class GreensFunctions(object):
     def __init__(self, path):
         """:param str path: Path to the GF directory *or* HDF5 file."""
         self.path = path
-        self.is_hdf5 = path.split('.')[-1] == 'hdf5'
+        self.is_hdf5 = not os.path.isdir(path)
         if self.is_hdf5:
             with self._hdf_open() as f:
                 self._hdirs = list(f)

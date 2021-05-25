@@ -14,64 +14,43 @@ shift
 declare -a cmds=("$@")
 
 IMAGE_NAME=wphase
-BASEMAP_ARCHIVE_NAME=basemap.tar.gz
-WPHASE_CONFIG_BUCKET_URL=
-WPHASE_ROOT=/wphase
-WPHASE_HOME="$WPHASE_ROOT"/app
-WPHASE_WORKING_ROOT=/var/tmp/wphase
-WPHASE_OUTPUT_DIR="${WPHASE_OUTPUT_DIR-/tmp/wphase-output}"
-WPHASE_GREENS_FUNCTIONS_DIR="$WPHASE_ROOT"/greens
-WPHASE_GREENS_FUNCTIONS_FILE=gfs_1.hdf5
+if [ "$WPHASE_OUTPUT_DIR" = "" ]; then 
+    WPHASE_OUTPUT_DIR="$HOME/wphase-outputs"
+fi
+HOST_WPHASE_OUTPUT_DIR="$WPHASE_OUTPUT_DIR"
+HOST_WPHASE_GREENS_FUNCTIONS="$HOME/wphase/greens/gfs_1.hdf5"
 
+mkdir -p $HOST_WPHASE_OUTPUT_DIR
 if [ "$mode" == "build" ]; then
-    if [ ! -f ./docker/"$BASEMAP_ARCHIVE_NAME" ]; then
-        # get the archive of basemap, either from the specified S3 bucket or from github
-        if [ "$WPHASE_CONFIG_BUCKET_URL" == "" ]; then
-            curl -L https://github.com/matplotlib/basemap/archive/v1.1.0.tar.gz \
-                -o docker/"$BASEMAP_ARCHIVE_NAME" \
-                || exit 1
-        else
-            aws s3 cp \
-                "$WPHASE_CONFIG_BUCKET_URL/$BASEMAP_ARCHIVE_NAME" \
-                ./docker/"$BASEMAP_ARCHIVE_NAME"
-        fi
-    fi
-
     docker build \
         -t "$IMAGE_NAME" \
         -f ./docker/Dockerfile \
-        --build-arg BASEMAP_ARCHIVE_NAME="$BASEMAP_ARCHIVE_NAME" \
-        --build-arg WPHASE_GREENS_FUNCTIONS_DIR="$WPHASE_GREENS_FUNCTIONS_DIR" \
-        --build-arg WPHASE_GREENS_FUNCTIONS_FILE="$WPHASE_GREENS_FUNCTIONS_FILE" \
-        --build-arg ARG_WPHASE_WEB_OUTPUTS_ROOT="$WPHASE_WORKING_ROOT"/web_outputs \
-        --build-arg ARG_WPHASE_SAVED_DATASETS_ROOT="$WPHASE_WORKING_ROOT"/saved_datasets \
-        --build-arg ARG_WPHASE_TEST_DATASETS_ROOT="$WPHASE_WORKING_ROOT"/test_data \
-        --build-arg ARG_WPHASE_GREENS_FUNCTIONS="$WPHASE_GREENS_FUNCTIONS_DIR"/"$WPHASE_GREENS_FUNCTIONS_FILE" \
-        --build-arg WPHASE_HOME="$WPHASE_HOME" \
         .
 
 elif [ "$mode" == "run" ]; then
+    # Run container for development
     if [ "${#cmds[@]}" != 0 ]; then
         cmd="${cmds[@]}"
         cmds=(bash -lc "$cmd") # this is an array, not a subshell!
     fi
     docker run -it --entrypoint /bin/bash --rm \
-        --mount type=bind,source=$HOME/wphase/greens,target="$WPHASE_GREENS_FUNCTIONS_DIR",readonly=true \
-        --mount type=bind,source=`pwd`,target="$WPHASE_HOME" \
-        --mount type=bind,source="$WPHASE_OUTPUT_DIR",target=/tmp/wphase-output,readonly=false \
         --network=host \
-        -e "WPHASE_HOME=$WPHASE_HOME" \
+        --mount type=bind,source=$HOST_WPHASE_GREENS_FUNCTIONS,target=/home/wphase/host_gf,readonly=true \
+        --mount type=bind,source=`pwd`,target="/home/wphase/app",readonly=false \
+        --mount type=bind,source="$HOST_WPHASE_OUTPUT_DIR",target=/outputs,readonly=false \
+        --env WPHASE_GREENS_FUNCTIONS=/home/wphase/host_gf \
+        --env WPHASE_OUTPUT_DIR=/outputs \
         "$IMAGE_NAME" \
-        "/reinstall-wphase-and-run" "${cmds[@]}"
+        /home/wphase/reinstall-wphase-and-run "${cmds[@]}"
 elif [ "$mode" == "run-wphase" ]; then
-    mkdir -p $WPHASE_OUTPUT_DIR
+    # A single, production-style run
     docker run -it --rm \
-        --mount type=bind,source=$HOME/wphase/greens,target="$WPHASE_GREENS_FUNCTIONS_DIR",readonly=true \
-        --mount type=bind,source="$WPHASE_OUTPUT_DIR",target=/outputs,readonly=false \
         --network=host \
-        -e "WPHASE_HOME=$WPHASE_HOME" \
+        --mount type=bind,source=$HOST_WPHASE_GREENS_FUNCTIONS,target=/home/wphase/host_gf,readonly=true \
+        --mount type=bind,source="$HOST_WPHASE_OUTPUT_DIR",target=/outputs,readonly=false \
+        --env WPHASE_GREENS_FUNCTIONS=/home/wphase/host_gf \
+        --env WPHASE_OUTPUT_DIR=/outputs \
         "$IMAGE_NAME" \
-        --outputs /outputs \
         "${cmds[@]}"
 else
     echo 'First argument must be either "build", "run" or "run-wphase".'

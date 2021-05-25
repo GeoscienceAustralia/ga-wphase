@@ -73,8 +73,8 @@ pip install .
 
 Required environment variables:
 
-- `WPHASE_HOME`: absolute path of a working directory for wphase, e.g.
-  `/home/you/wphase`
+- `WPHASE_OUTPUT_DIR`: absolute path to a directory in which W-Phase will write
+  its outputs.
 - `WPHASE_GREENS_FUNCTIONS`: absolute path to greens functions (either a
   directory or a hdf5 file, as described above)
 
@@ -104,8 +104,22 @@ wphase \
     --time '2020-12-15T23:22:01Z' \
     --outputs /tmp/wphase-outputs \
     --server http://localhost:8081 \
-    --host localhost:18180
+    --host localhost:18180 \
+    --debug
 ```
+
+All the usual seiscomp configuration flags are available:
+
+- `--console=1` to see errors on the command line (otherwise they are only
+  written to the logfile!)
+- `--debug` to see all log messages on the command line
+- `--user` to set the messaging username (default is `gawphase`)
+- `-g` to set the primary messaging group on which results are sent (default is
+  `FOCMECH`)
+
+You can get a full list of options by invoking `run-wphase` with `--help`.
+
+
 
 ## Using Docker
 
@@ -113,11 +127,16 @@ If you're running Linux with Docker and curl installed, you should be able to
 build a docker container simply by running (as root)
 `./run-or-build-container.sh build`.
 
+By default, the image is configured to run as a non-root user with uid 1000;
+hopefully this maps on to your host user for easy development. To change this
+uid (or gid), provide the build-args `DOCKER_USER_UID` and/or
+`DOCKER_USER_GID`.
+
 ### Developing on Docker
 
 While the container image includes the complete W-Phase application, it can
 easily be used for development by mounting in your working copy of the W-Phase
-source.  
+source.
 
 When you launch an interactive bash session on the container (e.g. using the
 `run-or-build-container.sh` script), if wphase is mounted at `/wphase` then it
@@ -149,7 +168,8 @@ sudo -E ./run-or-build-container.sh run wphase \
     --time '2020-12-15T23:22:01Z' \
     --outputs /tmp/wphase-outputs \
     --server http://localhost:8081 \
-    --host localhost:18180
+    --host localhost:18180 \
+    --debug
 ```
 
 Since the `./run-or-build-container.sh` script uses [host
@@ -183,16 +203,6 @@ sudo -E ./run-or-build-container.sh run-wphase \
 
 In this example, the output files would then be available at
 `./outputs/ga2020ykxhe/`.
-
-All the usual seiscomp configuration flags are available:
-
-- `--debug` to see log output
-- `--user` to set the messaging username (default is `gawphase`)
-- `-g` to set the primary messaging group on which results are sent (default is
-  `FOCMECH`)
-
-You can get a full list of options by invoking `run-wphase` with `--help`.
-
 
 ## TODO
 

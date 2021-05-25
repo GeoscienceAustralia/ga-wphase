@@ -1,9 +1,10 @@
 ################################################
 # Base image with all dependencies and seiscomp
-FROM ubuntu:20.04 AS base
+FROM ubuntu:20.04
 
 # SeisComP + W-Phase dependencies from apt:
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+RUN apt-get update &&  \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
         build-essential \
         curl \
         gfortran \
@@ -23,70 +24,45 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
         libxml2 \
         proj-bin \
         proj-data \
+        python-is-python3 \
         python3-dev \
         python3-pip \
-        python3-tk \
-        python3-twisted \
-        python3-dateutil \
     && rm -rf /var/lib/apt/lists/*
 
+# Set up non-root user
+ARG DOCKER_USER_GID=1000
+ARG DOCKER_USER_UID=1000
 
-# Install seiscomp3:
+RUN groupadd -r -g $DOCKER_USER_GID wphase && \
+    useradd -r -g wphase -u $DOCKER_USER_UID -s /bin/bash -d /home/wphase -c "docker user" wphase && \
+    mkdir -p /home/wphase/app /opt/seiscomp && \
+    chown -R wphase:wphase /home/wphase /opt/seiscomp
+
+USER wphase
+WORKDIR /home/wphase
+
+# Install pinned dependencies from PyPI
+COPY requirements.txt ./requirements.txt
+RUN pip3 install --user --no-cache-dir --no-deps -r requirements.txt
+
+# Install seiscomp 4.5:
 ARG SEISCOMP_TARBALL_URL=https://www.seiscomp.de/downloader/seiscomp-4.5.0-ubuntu20.04-x86_64.tar.gz
 RUN cd /opt/ && curl -s $SEISCOMP_TARBALL_URL | tar xfz -
 
-ARG LOCAL_INSTALL_FOLDER=/tmp
-ARG BASEMAP_ARCHIVE_NAME
-ARG WPHASE_GREENS_FUNCTIONS_DIR
-ARG WPHASE_GREENS_FUNCTIONS_FILE
-ARG ARG_WPHASE_WEB_OUTPUTS_ROOT
-ARG ARG_WPHASE_SAVED_DATASETS_ROOT
-ARG ARG_WPHASE_TEST_DATASETS_ROOT
-ARG ARG_WPHASE_GREENS_FUNCTIONS
-ENV WPHASE_WEB_OUTPUTS_ROOT="$ARG_WPHASE_WEB_OUTPUTS_ROOT"
-ENV WPHASE_SAVED_DATASETS_ROOT="$ARG_WPHASE_SAVED_DATASETS_ROOT"
-ENV WPHASE_TEST_DATASETS_ROOT="$ARG_WPHASE_TEST_DATASETS_ROOT"
-ENV WPHASE_GREENS_FUNCTIONS="$ARG_WPHASE_GREENS_FUNCTIONS"
-
-# Allow seiscomp to run as root:
-RUN sed -i 's/asRoot = False/asRoot = True/' /opt/seiscomp/bin/seiscomp-control.py
-
 # Configure environment for seiscomp:
 ENV SEISCOMP_ROOT="/opt/seiscomp" \
-    PATH="/opt/seiscomp/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    PATH="/home/wphase/.local/bin:/opt/seiscomp/bin:${PATH}" \
     LD_LIBRARY_PATH="/opt/seiscomp/lib" \
-    PYTHONPATH="/opt/seiscomp/lib/python" \
-    MANPATH="/opt/seiscomp/share/man"
+    PYTHONPATH="/opt/seiscomp/lib/python"
+    # PYTHONPATH is tolerable here because we only have one python version installed in the container
 
-# Configure seiscomp completion in bash:
-RUN echo "source /opt/seiscomp/share/shell-completion/seiscomp.bash" >> /root/.bashrc
+WORKDIR /home/wphase/app
+COPY --chown=wphase:wphase wphase ./wphase
+COPY --chown=wphase:wphase scripts ./scripts
+COPY --chown=wphase:wphase tests ./tests
+COPY --chown=wphase:wphase setup.py ./setup.py
 
-# Let seiscomp utilities run without requiring database dependencies:
-RUN echo 'core.plugins = ""' > /opt/seiscomp/etc/global.cfg
+COPY --chown=wphase:wphase docker/configure_wphase_image.sh /tmp/configure_wphase_image.sh
+RUN /tmp/configure_wphase_image.sh
 
-# create required folders for wphase
-RUN install -g "$(id -gn)" -o "$(id -un)" -d \
-    "$WPHASE_GREENS_FUNCTIONS_DIR" \
-    "$WPHASE_WEB_OUTPUTS_ROOT"
-
-# This script is used by both dev and prod to set up for wphase
-COPY docker/configure_wphase_image.sh "$LOCAL_INSTALL_FOLDER"/configure_wphase_image.sh
-
-#############################################################################
-# Dev image with auto-installation, to be used with run-or-build-container.sh
-FROM base AS dev
-ARG LOCAL_INSTALL_FOLDER=/tmp
-RUN "$LOCAL_INSTALL_FOLDER"/configure_wphase_image.sh dev
-
-##############################
-# Fully-baked production image
-FROM base AS prod
-ARG LOCAL_INSTALL_FOLDER=/tmp
-ARG WPHASE_HOME=/wphase/app
-ENV WPHASE_HOME="$WPHASE_HOME"
-COPY wphase "$WPHASE_HOME"/wphase
-COPY scripts "$WPHASE_HOME"/scripts
-COPY tests "$WPHASE_HOME"/tests
-COPY setup.py "$WPHASE_HOME"/setup.py
-RUN "$LOCAL_INSTALL_FOLDER"/configure_wphase_image.sh prod
-ENTRYPOINT ["wphase"]
+ENTRYPOINT ["wphase", "--console=1"]

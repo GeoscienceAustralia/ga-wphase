@@ -22,37 +22,10 @@ os.environ['OPENBLAS_NUM_THREADS'] = '1'
 #: SAC files).
 USE_HDF5_GREENS_DB = True
 
-#: Home directory for wphase. This will be used to define default locations for
-#: where inputs (Green's functions, inventories, saved datasets) can be found
-#: and where outputs will be written.
-WPHASE_HOME = os.environ.get(
-    "WPHASE_HOME",
-    os.path.join(os.environ.get("HOME"), 'wphase'))
-if not WPHASE_HOME:
-    raise Exception('env var WPHASE_HOME is defined but is blank')
-
 #: Directory containing the green's functions.
-GREEN_DIR = os.environ.get('WPHASE_GREENS_FUNCTIONS')
-if not GREEN_DIR:
-    raise Exception("env var WPHASE_GREENS_FUNCTIONS is not set.")
+GREEN_DIR = os.environ['WPHASE_GREENS_FUNCTIONS']
 
-#: Path to where datasets are saved for posterity.
-WPHASE_SAVED_DATASETS_ROOT = os.environ.get(
-    'WPHASE_SAVED_DATASETS_ROOT',
-    os.path.join(WPHASE_HOME, 'wphase_saved_datasets'))
-if not WPHASE_SAVED_DATASETS_ROOT:
-    raise Exception('env var WPHASE_SAVED_DATASETS_ROOT is defined but is blank')
-
-#: Path to system test datasets.
-WPHASE_TEST_DATASETS_ROOT = os.environ.get(
-    'WPHASE_TEST_DATASETS_ROOT',
-    os.path.join(WPHASE_HOME, 'wphase_test_data'))
-if not WPHASE_TEST_DATASETS_ROOT:
-    raise Exception('env var WPHASE_TEST_DATASETS_ROOT is defined but is blank')
-
-#: Root directory for system test data.
-SYSTEM_TEST_DATA_ROOT_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), 'tests', 'TEST_DATA')
+DEFAULT_OUTPUT_DIR = os.environ.get('WPHASE_OUTPUT_DIR', '/tmp/wphase-output')
 
 #: The number of worker processes to use in :py:class:`multiprocessing.Pool`.
 N_WORKERS_IN_POOL = None
@@ -132,10 +105,3 @@ INVERSION_ERROR_KEY = 'InversionError'
 
 #: Implementation of bandpass filter to use
 BANDPASS_IMPLEMENTATION = 'scipy'
-
-def safe_make_dir(dirname):
-    if not os.path.exists(dirname):
-        os.makedirs(dirname)
-
-# ensure that all the directories we need to exist do exist.
-safe_make_dir(WPHASE_SAVED_DATASETS_ROOT)

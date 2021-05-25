@@ -56,7 +56,7 @@ class WPhase(Application):
         Application.__init__(self, argc, argv)
 
         # default location to write outputs to
-        self.output = '/tmp/wphase-output'
+        self.output = settings.DEFAULT_OUTPUT_DIR
         self.filename = None
         self.mag_type = None
         self.mag_value = None

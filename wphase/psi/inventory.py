@@ -114,7 +114,8 @@ def get_waveforms(
         decimate=True,
         reject_incomplete=False,
         req_times=None,
-        waveforms=None):
+        waveforms=None,
+        save_path=None):
     '''
     This function will get the waveforms associated with an event to
     perform a WP inversion.
@@ -228,6 +229,9 @@ def get_waveforms(
             except Exception as e:
                 logger.error('Problem with request from server %s:\n%s', client.base_url, str(e))
                 continue
+        if save_path:
+            logger.info("Saving waveforms in %s", save_path)
+            st.write(save_path, format='MSEED')
 
     # Removing gappy traces (that is channel ids that are repeated)
     st = remove_gappy_traces(st)

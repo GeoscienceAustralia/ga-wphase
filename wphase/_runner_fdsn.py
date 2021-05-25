@@ -24,6 +24,7 @@ def load_metadata(
         dist_range,
         networks,
         inventory=None,
+        save_path=None,
         t_before_origin=3600.,
         t_after_origin=3600.):
 
@@ -110,6 +111,9 @@ def load_metadata(
                                 # TODO: log that this has happenned
                                 pass
 
+    if save_path:
+        logger.info("Saving inventory in %s", save_path)
+        inv.write(save_path, format='STATIONXML')
     return build_metadata_dict(inv)
 
 
@@ -140,6 +144,8 @@ def runwphase(
         make_maps=True,
         make_plots=True,
         raise_errors=False,
+        save_waveforms=None,
+        save_inventory=None,
         **kwargs):
 
     """
@@ -175,7 +181,8 @@ def runwphase(
             eqinfo,
             dist_range,
             networks,
-            inventory=inventory)
+            inventory=inventory,
+            save_path=save_inventory)
 
     if failures:
         with open(os.path.join(output_dir, 'inv.errs'), 'w') as err_out:
@@ -204,7 +211,9 @@ def runwphase(
             add_ptime = add_ptime,
             bulk_chunk_len = bulk_chunk_len,
             prune_cutoffs = prune_cutoffs,
-            waveforms = waveforms)
+            waveforms = waveforms,
+            save_path = save_waveforms,
+        )
 
         if use_only_z_components:
             streams = streams.select(component = 'Z')

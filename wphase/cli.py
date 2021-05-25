@@ -85,6 +85,8 @@ class WPhase(Application):
         self.agency = 'GA'
         self.make_maps = True
         self.overwrite = False
+        self.save_waveforms = None
+        self.save_inventory = None
 
         # enable messaging support
         self.setMessagingEnabled(True)
@@ -111,6 +113,14 @@ class WPhase(Application):
             "Output",
             "outputs,o",
             "Directory to write output to. Defaults to /tmp/wphase-output.")
+        self.commandline().addStringOption(
+            "Output",
+            "save-waveforms",
+            "Path in which to save raw waveforms (as miniseed)")
+        self.commandline().addStringOption(
+            "Output",
+            "save-inventory",
+            "Path in which to save raw inventory (as stationXML)")
 
         self.commandline().addGroup("Input")
         self.commandline().addStringOption(
@@ -268,6 +278,9 @@ class WPhase(Application):
             try: depth = float(self.commandline().optionString("depth"))
             except Exception: depth = 0.
 
+            getter('save-waveforms', 'save_waveforms')
+            getter('save-inventory', 'save_inventory')
+
             try:
                 self.eqinfo = {
                     'lat' : float(self.commandline().optionString("lat")),
@@ -362,7 +375,9 @@ class WPhase(Application):
                     eqinfo=self.eqinfo,
                     networks=self.networks,
                     make_maps=self.make_maps,
-                    output_dir_can_exist=self.overwrite)
+                    output_dir_can_exist=self.overwrite,
+                    save_waveforms=self.save_waveforms,
+                    save_inventory=self.save_inventory)
             except Exception:
                 from traceback import format_exc
                 logger.error('failed to run wphase: %s', format_exc())

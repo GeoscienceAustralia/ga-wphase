@@ -10,11 +10,12 @@ except Exception:
     pass
 
 import os
+import errno
 import json
 
 import numpy as np
 
-from wphase import settings
+from wphase import settings, logger
 from wphase.result import jsonencode_np
 from wphase._runner_fdsn import runwphase as wphase_runner
 
@@ -45,11 +46,14 @@ def runwphase(
         raise Exception('Antelope is no longer supported.')
 
     # Make the output directory (fails if it already exists).
-    if output_dir_can_exist:
-        try: os.makedirs(output_dir)
-        except OSError: pass
-    else:
+    logger.debug("Creating output directory %s", output_dir)
+    try:
         os.makedirs(output_dir)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
+        if not output_dir_can_exist:
+            raise Exception("Output directory %s already exists!" % output_dir) from e
 
     wphase_results = wphase_runner(
         output_dir,

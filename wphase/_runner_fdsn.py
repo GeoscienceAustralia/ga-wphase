@@ -6,6 +6,7 @@ import sys, os, traceback
 import pickle
 
 
+import obspy
 from obspy.core.utcdatetime import UTCDateTime
 from obspy.clients.fdsn import Client
 from obspy.core.inventory import Inventory
@@ -38,6 +39,8 @@ def load_metadata(
         very rough (within the week would probably be equally sensible).
     """
     if inventory:
+        if isinstance(inventory, str):
+            inventory = obspy.read_inventory(inventory)
         logger.info('Building metadata from provided inventory')
         return build_metadata_dict(inventory)
 

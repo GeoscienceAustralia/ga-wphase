@@ -6,6 +6,7 @@ from builtins import range
 import pickle as pickle
 from collections import Counter, defaultdict
 import numpy as np
+import obspy
 from obspy.core import UTCDateTime, Stream
 
 try:
@@ -204,6 +205,8 @@ def get_waveforms(
 
     if waveforms:
         # waveforms provided as input, just clean them
+        if isinstance(waveforms, str):
+            waveforms = obspy.read(waveforms)
         logger.info('%d traces provided as input', len(waveforms))
         st = waveforms
     else:

@@ -87,6 +87,8 @@ class WPhase(Application):
         self.overwrite = False
         self.save_waveforms = None
         self.save_inventory = None
+        self.waveforms = None
+        self.inventory = None
 
         # enable messaging support
         self.setMessagingEnabled(True)
@@ -151,6 +153,14 @@ class WPhase(Application):
             "Input",
             "magvalue",
             "The magnitude of the triggering event.")
+        self.commandline().addStringOption(
+            "Input",
+            "waveforms",
+            "Path to waveforms to use (instead of FDSN)")
+        self.commandline().addStringOption(
+            "Input",
+            "inventory",
+            "Path to inventory to use (instead of FDSN)")
         self.commandline().addStringOption(
             "Input",
             "server",
@@ -280,6 +290,8 @@ class WPhase(Application):
 
             getter('save-waveforms', 'save_waveforms')
             getter('save-inventory', 'save_inventory')
+            getter('waveforms', 'waveforms')
+            getter('inventory', 'inventory')
 
             try:
                 self.eqinfo = {
@@ -377,7 +389,9 @@ class WPhase(Application):
                     make_maps=self.make_maps,
                     output_dir_can_exist=self.overwrite,
                     save_waveforms=self.save_waveforms,
-                    save_inventory=self.save_inventory)
+                    save_inventory=self.save_inventory,
+                    waveforms=self.waveforms,
+                    inventory=self.inventory)
             except Exception:
                 from traceback import format_exc
                 logger.error('failed to run wphase: %s', format_exc())

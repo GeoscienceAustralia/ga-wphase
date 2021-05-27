@@ -355,7 +355,7 @@ def wpinv(
     DIST_con   = [DIST[i] for i in accepted_traces]
     AZI_con    = [AZI[i] for i in accepted_traces]
     trlist_pre_con = [trlist_pre[i] for i in accepted_traces]
-    pre_param = preliminarymagnitude(tr_p2p_con, DIST_con, AZI_con)
+    pre_param = preliminary_magnitude(tr_p2p_con, DIST_con, AZI_con)
 
     pre_wp_mag = pre_param[0]
     pre_M0 =  pre_param[1]
@@ -385,7 +385,7 @@ def wpinv(
     ########################################################################
 
     # Redefine and define some values according to the pre_wp_mag
-    Ta, Tb =   GetCornerFreqsFromMag(pre_wp_mag)
+    Ta, Tb = get_corner_freqs_from_mag(pre_wp_mag)
     T = np.linspace(Ta,Tb,500)
     freq = 1./T
     omega = freq*2.*np.pi
@@ -666,7 +666,7 @@ def MomentRateFunction(t_h, dt):
     return MRF
 
 
-def GetCornerFreqsFromMag(Mw):
+def get_corner_freqs_from_mag(Mw):
     '''
     Compute the corner periods required for Wphase
     inversion based on the preliminary Wphase magnitude.
@@ -691,7 +691,7 @@ def GetCornerFreqsFromMag(Mw):
 
 
 
-def preliminarymagnitude(tr_p2p, dists, azis):
+def preliminary_magnitude(tr_p2p, dists, azis):
     '''
     Compute the preliminary magnitude.
 
@@ -1178,7 +1178,7 @@ def rot_12_NE(st, META):
         tr1.trim(timeA,timeB)
         tr2.trim(timeA,timeB)
         azi = META[id1]['azimuth']
-        tr1.data, tr2.data = Rot2D(tr1.data,tr2.data,-azi)
+        tr1.data, tr2.data = rot2D(tr1.data,tr2.data,-azi)
 
     return st
 
@@ -1187,7 +1187,7 @@ def rot_12_NE(st, META):
 
 
 
-def Rot2D(x,y,angle):
+def rot2D(x,y,angle):
     '''
     Given 2 vector x,y (same length) it performs a couterclockwise
     2d-rotation in a angle "angle" (degrees) for earch pair of elements

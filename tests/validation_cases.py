@@ -1,37 +1,42 @@
-import gzip
+import logging
+import tarfile
 import os
-from shutil import copyfileobj
+from os.path import join, exists
 from urllib.request import urlretrieve
 from tempfile import NamedTemporaryFile
 
 import obspy
 from obspy.core import UTCDateTime
 
-SERVER = 'http://eatws-public.s3.amazonaws.com/wphase-test-datasets'
-DIR = os.path.join(os.path.dirname(__file__), 'temp')
+logger = logging.getLogger("wphase.tests")
 
-def gunzip_url(url, dest):
-    """Equivalent of ``curl url | zcat > dest``"""
-    with NamedTemporaryFile() as tmp:
-        urlretrieve(url, tmp.name)
-        tmp.flush()
-        with gzip.open(tmp.name) as unzipper, open(dest, "wb") as out:
-            copyfileobj(unzipper, out)
+DATASETS_URL = 'https://github.com/GeoscienceAustralia/ga-wphase/releases/download/v0.1/ga-wphase-test-datasets-v0.1.tar.gz'
+TARBALL_SUBDIR = 'test-datasets'
+TESTS_DIR = os.path.dirname(__file__)
+
+def fetch_datasets(url):
+    """Download and extract the test datasets."""
+    tarball_path = join(TESTS_DIR, 'dl.tar.gz')
+    logger.warning("Downloading test datasets from %s", DATASETS_URL)
+    urlretrieve(url, tarball_path)
+    with tarfile.open(tarball_path, "r:gz") as tarball:
+        logger.warning("Extracting test datasets to %s", TESTS_DIR)
+        tarball.extractall(path=TESTS_DIR)
+    os.remove(tarball_path)
 
 
 def get_dataset(eqinfo):
     """Retrieve a test dataset, either from the local cache directory or from
     the web."""
-    wfpath = "/{}.mseed".format(eqinfo["id"])
-    invpath = "/{}.xml".format(eqinfo["id"])
-    if not os.path.isdir(DIR):
-        os.mkdir(DIR)
-    if not os.path.exists(DIR + wfpath):
-        gunzip_url(SERVER + wfpath + ".gz", DIR + wfpath)
-    if not os.path.exists(DIR + invpath):
-        gunzip_url(SERVER + invpath + ".gz", DIR + invpath)
-    inventory = obspy.read_inventory(DIR + invpath)
-    waveforms = obspy.read(DIR + wfpath)
+    evid = eqinfo["id"]
+    wfpath = join(TESTS_DIR, TARBALL_SUBDIR, "{}.mseed".format(evid))
+    invpath = join(TESTS_DIR, TARBALL_SUBDIR, "{}.xml".format(evid))
+    if not (exists(wfpath) and exists(invpath)):
+        fetch_datasets(DATASETS_URL)
+    if not (exists(wfpath) and exists(invpath)):
+        raise Exception("Dataset {evid} missing even after running fetch_datasets!")
+    inventory = obspy.read_inventory(invpath)
+    waveforms = obspy.read(wfpath)
     return inventory, waveforms
 
 

@@ -1,7 +1,10 @@
 .git
 build
-tests/temp
+tests/test-datasets
 tests/prof
+prof
 **/*.so
 **/*.pyc
 **/__pycache__
+*.egg-info
+.pytest_cache

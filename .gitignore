@@ -6,4 +6,6 @@ _Inline/
 /build/
 Wphase.egg*/
 /outputs
-/tests/temp/
+/tests/test-datasets
+prof
+tests/prof

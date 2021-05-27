@@ -717,7 +717,7 @@ def preliminary_magnitude(tr_p2p, dists, azis):
     azis = np.array(azis) * np.pi/180. # Φ: azimuths in radians
     N = len(tr_p2p)
 
-    # We solve the system Mx = B in the least squares sense, where
+    # We set out to solve the system Mx = B in the least squares sense, where
     #
     # ith row of M = [1, cos(2Φ_i), sin(2Φ_i)]
     #            x = [2a - b, -b cos(2Φ_0), -b sin(2Φ_0)]
@@ -734,6 +734,22 @@ def preliminary_magnitude(tr_p2p, dists, azis):
     M[:,0] = 1
     M[:,1] = np.cos(2*azis)
     M[:,2] = np.sin(2*azis)
+
+    # HOWEVER, this ordinary least-squares solution is somewhat brittle: the
+    # azimuthal variation of the amplitude can sometimes arrange itself such
+    # that the resulting solution has b>2a and thus negative amplitudes! In
+    # practice, we observed this in cases where the azimuthal coverage was very
+    # poor.
+
+    # To mitigate this, we apply regularization to penalize large values of
+    # x[1] and x[2]: the cost function becomes
+    #   F(x) = |Mx - B|^2 + λ(x_1^2 + x_2^2),
+    # which can be achieved by adding a couple rows to M and B:
+
+    LAMBDA = 1 # Regularization strength λ
+    M = np.concatenate((M, [[0, LAMBDA, 0], [0, 0, LAMBDA]]))
+    B = np.concatenate((B, [0, 0]))
+
     x = lstsq(M, B, rcond=None)[0]
     amp = x[0]/2. # semi-amplitude a - b/2
 

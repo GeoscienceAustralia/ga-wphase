@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Core implementation of the W-Phase inversion."""
 from __future__ import absolute_import, print_function
 
@@ -707,42 +708,57 @@ def preliminary_magnitude(tr_p2p, dists, azis):
         #. Preliminary half duration for the moment rate func in seconds.
     '''
 
-    # Parameters:
-    # Attenuation relation for W-phase:
-    distance = np.array([5., 10., 20., 30., 40., 50.,
-                         60., 70., 80., 90.5])
-    atten = np.array([1.5, 1.4, 1.2, 1.0, 0.7, 0.56,
-                       0.61, 0.56, 0.50 , 0.52 ])
+    # Attenuation relation q(Δ) for W-phase amplitudes as a function of distance.
+    # Lifted directly from Kanamori et al 2008.
+    distance = np.array([5.,  10., 20., 30., 40., 50.,  60.,  70.,  80.,  90.5])
+    atten    = np.array([1.5, 1.4, 1.2, 1.0, 0.7, 0.56, 0.61, 0.56, 0.50, 0.52 ])
+    atten_func = interp1d(distance, atten, kind = 'cubic')
 
-    # Empirical coeff. for W-phase mag. log A = m*(M_w) + n
-    m = np.log10(0.9/0.065)
-    n = np.log10(0.9)-m*8.5
-
-    azis = np.array(azis)
+    azis = np.array(azis) * np.pi/180. # Φ: azimuths in radians
     N = len(tr_p2p)
-    azis *= np.pi/180.
-    atten_func =  interp1d(distance,atten, kind = 'cubic')
 
-    ## We will solve the system Mx = B in the least squares sense.
-    B = tr_p2p/atten_func(dists)
+    # We solve the system Mx = B in the least squares sense, where
+    #
+    # ith row of M = [1, cos(2Φ_i), sin(2Φ_i)]
+    #            x = [2a - b, -b cos(2Φ_0), -b sin(2Φ_0)]
+    # ith row of B = 2 max |u_w_i| / q(Δ_i)
+    #
+    # Applying some trig identities shows that this matrix equation is
+    # equivalent to Kanamori's (12) written out for each station amplitude.
+    #
+    # The extra factors of 2 here are explained by our usage of p2p amplitudes
+    # versus Kanamori's usage of semi-amplitudes.
+
+    B = tr_p2p / atten_func(dists)
     M = np.zeros((N,3))
     M[:,0] = 1
     M[:,1] = np.cos(2*azis)
     M[:,2] = np.sin(2*azis)
-    x = lstsq(M,B, rcond=None)[0]
-    amp = x[0]/2.
+    x = lstsq(M, B, rcond=None)[0]
+    amp = x[0]/2. # semi-amplitude a - b/2
 
-    ###We need to add 3 because we use meters instead of mm.
-    pre_wp_mag = (np.log10(amp)-n+3)/m
-    #Scalar moment in dyne * cm
+    # Empirical coeff. for W-phase mag. log(a-b/2) = m*(M_w) + n
+    # TODO: explain where these come from! Couldn't find them written down in
+    # the paper (there was just a graph with a trendline).
+    m = np.log10(0.9 / 0.065)
+    n = np.log10(0.9) - m * 8.5
+
+    # We need to add 3 because we use meters instead of mm.
+    pre_wp_mag = (np.log10(amp) - n + 3)/m
+
+    # Scalar moment in dyne * cm:
     M0 = 10 ** (1.5 * pre_wp_mag + 16.1)
-    t_h = 1.2  * 10** -8. * M0 **(1./3.)
 
-    # I need to check  this. I do not know the convention
+    # Half-duration of moment rate function (just a dimensional estimate of
+    # mechanism timescale):
+    t_h = 1.2 * 10**-8. * M0**(1./3.)
+
+    # Our estimate of Φ_0.
+    # I need to check this. I do not know the convention
     # for the strike I should use.
-    pre_strike = 0.5*np.arctan2(x[2],x[1])*180./np.pi
+    pre_strike = 0.5 * np.arctan2(x[2], x[1]) * 180./np.pi
 
-    return  pre_wp_mag, M0, pre_strike, t_h
+    return pre_wp_mag, M0, pre_strike, t_h
 
 
 

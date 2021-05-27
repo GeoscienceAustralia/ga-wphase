@@ -151,16 +151,16 @@ needs.
 To start some process inside the container:
 
 ```sh
-sudo -E ./run-or-build-container.sh run <command>
+./run-or-build-container.sh run <command>
 
 # for example, to start a bash shell:
-sudo -E ./run-or-build-container.sh run bash
+./run-or-build-container.sh run bash
 
 # to run the test suite:
-sudo -E ./run-or-build-container.sh run pytest
+./run-or-build-container.sh run pytest
 
 # to run the same example as above:
-sudo -E ./run-or-build-container.sh run wphase \
+./run-or-build-container.sh run wphase \
     --evid ga2020yskxhe \
     --lat 5.2 \
     --lon 125.47 \
@@ -191,7 +191,7 @@ automatically handling the directory mounting:
 
 ```
 # to run the same example as above:
-sudo -E ./run-or-build-container.sh run-wphase \
+./run-or-build-container.sh run-wphase \
     --evid ga2020yskxhe \
     --lat 5.2 \
     --lon 125.47 \
@@ -217,13 +217,11 @@ pass, but many more improvements are possible:
       things might have improved or there might be optimizations we can make.
     - I think this would allows us to relicense
       under the more permissive Apache license (GA's preference).
-- Strip out any remaining dead code, then refactor what's left and improve the
-  documentation.
+- General refactoring and code cleanup. I've done some, but there is a lot left
+  to do (particularly in the `psi/` directory).
 - Create a fully-integrated SeisComP plugin/daemon that watches the messaging
   bus for events matching certain criteria and runs automatically (like
   `scautomt` does).
-- Reimplement the production container on top of a slimmer base OS to decrease
-  the filesize.
 
 
 ## License

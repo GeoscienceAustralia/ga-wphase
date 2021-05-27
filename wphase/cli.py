@@ -359,7 +359,7 @@ class WPhase(Application):
 
         item = None
         res = None
-        parser = WPhaseParser(logger.info)
+        parser = WPhaseParser()
 
         Logging.enableConsoleLogging(Logging.getGlobalChannel("error"))
         wphase_failed = False

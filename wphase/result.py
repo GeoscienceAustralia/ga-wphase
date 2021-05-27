@@ -6,6 +6,9 @@ import json
 
 import numpy as np
 
+from wphase import logger
+
+
 SC3_TIME_FORMAT="%Y-%m-%d %H:%M:%S.%f"
 class FMItem(object):
     """Represents the focal mechanism resulting from a w-phase run in python-native types.""" 
@@ -35,21 +38,15 @@ class FMItem(object):
         self.centroid = False
         self.overallMisfit = None
 
-def default_log(x):
-    pass
-
 class WPhaseParser(object):
-    def __init__(self, logger=default_log):
-        self.logger = logger
     def read(self, filename=None, json_data=None):
         """Parse a ga-wphase JSON output into a FMItem."""
-        log = self.logger
         if filename is not None:
             if json_data is not None:
                 raise ValueError('exactly one of filename and json_data may be not None')
 
             with open(filename) as json_file:
-                log("reading file {}".format(filename))
+                logger.info("reading file {}".format(filename))
                 return self.read(json_data=json.load(json_file))
 
         else:
@@ -70,8 +67,10 @@ class WPhaseParser(object):
 
                 if name not in dct:
                     msg = '{} is missing in: {}'.format(name, filename)
-                    if err: raise ValueError(msg)
-                    else: log(msg)
+                    if err:
+                        raise ValueError(msg)
+                    else:
+                        logger.info(msg)
 
                 elif to is None:
                     to = name
@@ -113,11 +112,11 @@ class WPhaseParser(object):
                 try:
                     item.overallMisfit = float(json_data.get('OL3', json_data.get('OL2'))['misfit']) / 100.
                 except Exception:
-                    log('could not get misfit')
+                    logger.warning('could not get misfit')
 
                 item.centroid = "Centroid" in json_data
 
-                log("parsed file %s successfully" % filename)
+                logger.info("parsed file %s successfully" % filename)
 
                 return item
 

@@ -140,4 +140,4 @@ def stacov(location, lats, lons, mt=None, filename=None, fig=None):
 
     if filename:
         fig.savefig(filename, dpi=100, transparent=True, bbox_inches='tight')
-        logger.warning("Wrote %s successfully", filename)
+        logger.info("Wrote %s successfully", filename)

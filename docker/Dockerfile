@@ -65,4 +65,7 @@ COPY --chown=wphase:wphase setup.py ./setup.py
 COPY --chown=wphase:wphase docker/configure_wphase_image.sh /tmp/configure_wphase_image.sh
 RUN /tmp/configure_wphase_image.sh
 
+# Default mountpoints:
+ENV WPHASE_OUTPUT_DIR=/outputs
+ENV WPHASE_GREENS_FUNCTIONS=/greens
 ENTRYPOINT ["wphase", "--console=1"]

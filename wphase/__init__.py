@@ -22,7 +22,7 @@ from ._runner_fdsn import runwphase as wphase_runner
 logger = logging.getLogger(__name__)
 
 def runwphase(
-    output_dir,
+    output_dir = None,
     server = None,
     greens_functions_dir = settings.GREEN_DIR,
     n_workers_in_pool = settings.N_WORKERS_IN_POOL,
@@ -48,14 +48,15 @@ def runwphase(
         raise Exception('Antelope is no longer supported.')
 
     # Make the output directory (fails if it already exists).
-    logger.debug("Creating output directory %s", output_dir)
-    try:
-        os.makedirs(output_dir)
-    except OSError as e:
-        if e.errno != errno.EEXIST:
-            raise
-        if not output_dir_can_exist:
-            raise Exception("Output directory %s already exists!" % output_dir) from e
+    if output_dir:
+        logger.debug("Creating output directory %s", output_dir)
+        try:
+            os.makedirs(output_dir)
+        except OSError as e:
+            if e.errno != errno.EEXIST:
+                raise
+            if not output_dir_can_exist:
+                raise Exception("Output directory %s already exists!" % output_dir) from e
 
     wphase_results = wphase_runner(
         output_dir,
@@ -70,9 +71,10 @@ def runwphase(
     wphase_results[settings.HOST_NAME_KEY] = settings.WPHASE_HOST_NAME
     wphase_results[settings.WPHASE_DATA_SOURCE_KEY] = server if server else "local files"
 
-    # save the results
-    with open(os.path.join(output_dir, settings.WPHASE_OUTPUT_FILE_NAME), 'w') as out:
-        json.dump(wphase_results, out, default=jsonencode_np)
+    # save the results if output_dir provided
+    if output_dir:
+        with open(os.path.join(output_dir, settings.WPHASE_OUTPUT_FILE_NAME), 'w') as out:
+            json.dump(wphase_results, out, default=jsonencode_np)
 
     # re-raise any errors from the dark side
     if settings.WPHASE_ERROR_KEY in wphase_results:

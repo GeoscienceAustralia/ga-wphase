@@ -235,9 +235,9 @@ def get_waveforms(
             except Exception as e:
                 logger.error('Problem with request from server %s:\n%s', client.base_url, str(e))
                 continue
-        if save_path:
-            logger.info("Saving waveforms in %s", save_path)
-            st.write(save_path, format='MSEED')
+    if save_path:
+        logger.info("Saving waveforms in %s", save_path)
+        st.write(save_path, format='MSEED')
 
     # Removing gappy traces (that is channel ids that are repeated)
     st = remove_gappy_traces(st)

@@ -67,78 +67,78 @@ def load_metadata(
     if inventory:
         if isinstance(inventory, str):
             inventory = obspy.read_inventory(inventory)
-        logger.info('Building metadata from provided inventory')
-        return build_metadata_dict(inventory)
+        logger.info('Loaded provided inventory')
+        inv = inventory
+    else:
+        def caller_maker(depth=0, **kwargs):
+            if 'network' in kwargs and kwargs['network'].upper() == 'ALL':
+                kwargs.pop('network')
 
-    def caller_maker(depth=0, **kwargs):
-        if 'network' in kwargs and kwargs['network'].upper() == 'ALL':
-            kwargs.pop('network')
+            base_call = {
+                "level"    : 'response',
+                "channel"  : 'BH?',
+                "latitude" : eqinfo['lat'],
+                "longitude": eqinfo['lon'],
+                "minradius": dist_range[0],
+                "maxradius": dist_range[1],
+                "starttime": eqinfo['time'] - t_before_origin,
+                "endtime"  : eqinfo['time'] + t_after_origin}
 
-        base_call = {
-            "level"    : 'response',
-            "channel"  : 'BH?',
-            "latitude" : eqinfo['lat'],
-            "longitude": eqinfo['lon'],
-            "minradius": dist_range[0],
-            "maxradius": dist_range[1],
-            "starttime": eqinfo['time'] - t_before_origin,
-            "endtime"  : eqinfo['time'] + t_after_origin}
+            base_call.update(kwargs)
 
-        base_call.update(kwargs)
+            def make_call(**kwargs):
+                args = base_call.copy()
+                args.update(kwargs)
+                return client.get_stations(**args)
 
-        def make_call(**kwargs):
-            args = base_call.copy()
-            args.update(kwargs)
-            return client.get_stations(**args)
+            logger.info('Retrieving metadata from server %s', client.base_url)
+            if depth == 0:
+                def caller():
+                    return make_call()
+            elif depth == 1:
+                def caller(net):
+                    return make_call(network=net)
+            elif depth == 2:
+                def caller(net, sta):
+                    return make_call(network=net, station=sta)
+            elif depth == 3:
+                def caller(net, sta, cha):
+                    return make_call(network=net, station=sta, channel=cha)
 
-        logger.info('Retrieving metadata from server %s', client.base_url)
-        if depth == 0:
-            def caller():
-                return make_call()
-        elif depth == 1:
-            def caller(net):
-                return make_call(network=net)
-        elif depth == 2:
-            def caller(net, sta):
-                return make_call(network=net, station=sta)
-        elif depth == 3:
-            def caller(net, sta, cha):
-                return make_call(network=net, station=sta, channel=cha)
+            return caller
 
-        return caller
+        try:
+            # first, try and get everything
+            inv = caller_maker(network=networks)()
 
-    try:
-        # first, try and get everything
-        inv = caller_maker(network=networks)()
+        except Exception:
+            # ... that didn't work
+            nets = caller_maker(network=networks, level='network')()
+            inv = Inventory([], None)
 
-    except Exception:
-        # ... that didn't work
-        nets = caller_maker(network=networks, level='network')()
-        inv = Inventory([], None)
-
-        # try by network
-        call1 = caller_maker(1)
-        for net in nets:
-            try:
-                inv += call1(net.code)
-            except Exception:
-                # ... by station
-                stas = caller_maker(network=net.code, level='station')()
-                call2 = caller_maker(2)
-                for sta in stas[0]:
-                    try:
-                        inv += call2(net.code, sta.code)
-                    except Exception:
-                        # ... by channel
-                        chans = caller_maker(network=net.code, station=sta.code, level='channel')()
-                        call3 = caller_maker(3)
-                        for chan in chans[0][0]:
-                            try:
-                                inv += call3(net.code, sta.code, chan.code)
-                            except Exception:
-                                # ... skip the channel
-                                # TODO: log that this has happenned
-                                pass
+            # try by network
+            call1 = caller_maker(1)
+            for net in nets:
+                try:
+                    inv += call1(net.code)
+                except Exception:
+                    # ... by station
+                    stas = caller_maker(network=net.code, level='station')()
+                    call2 = caller_maker(2)
+                    for sta in stas[0]:
+                        try:
+                            inv += call2(net.code, sta.code)
+                        except Exception:
+                            # ... by channel
+                            chans = caller_maker(network=net.code, station=sta.code, level='channel')()
+                            call3 = caller_maker(3)
+                            for chan in chans[0][0]:
+                                try:
+                                    inv += call3(net.code, sta.code, chan.code)
+                                except Exception:
+                                    # ... skip the channel
+                                    # TODO: log that this has happenned
+                                    pass
 
     if save_path:
         logger.info("Saving inventory in %s", save_path)
@@ -213,7 +213,7 @@ def runwphase(
             inventory=inventory,
             save_path=save_inventory)
 
-    if failures:
+    if output_dir and failures:
         with open(os.path.join(output_dir, 'inv.errs'), 'w') as err_out:
             err_out.write('\n'.join(failures))
 
@@ -221,7 +221,7 @@ def runwphase(
         raise Exception('no metadata available for: \n{}'.format(
             '\n\t'.join('{}: {}'.format(*kv) for kv in eqinfo.items())))
 
-    if pickle_inputs:
+    if output_dir and pickle_inputs:
         with open(os.path.join(output_dir, 'inv.pkl'), 'wb') as inv_out:
             pickle.dump(metadata, inv_out)
 
@@ -251,7 +251,7 @@ def runwphase(
 
         meta_t_p.update(meta_t_p_)
 
-        if pickle_inputs:
+        if output_dir and pickle_inputs:
             streams_pickle_file = os.path.join(output_dir, 'streams.pkl')
             with open(streams_pickle_file, 'wb') as pkle:
                 pickle.dump((meta_t_p, streams), pkle)
@@ -277,8 +277,8 @@ def runwphase(
                 working_dir = output_dir,
                 eqinfo = eqinfo,
                 metadata = meta_t_p,
-                make_maps=make_maps,
-                make_plots=make_plots)
+                make_maps=output_dir and make_maps,
+                make_plots=output_dir and make_plots)
 
     except InversionError as e:
         wphase_output.add_warning(str(e))

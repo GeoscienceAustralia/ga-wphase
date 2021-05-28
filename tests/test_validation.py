@@ -15,7 +15,7 @@ from validation_cases import cases, get_dataset, result_keys
 def assert_allclose(a, b):
     numpy.testing.assert_allclose(a, b, rtol=1e-3)
 
-@pytest.mark.parametrize("eqinfo", cases)
+@pytest.mark.parametrize("eqinfo", cases, ids=lambda c: c['id'])
 def test_validity_from_fixed_datasets(eqinfo, tmpdir):
     """Ensure that the inversion returns the expected results when tested on
     known input data."""

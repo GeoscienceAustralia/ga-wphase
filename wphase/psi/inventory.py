@@ -3,6 +3,8 @@ from __future__ import absolute_import, print_function
 from future import standard_library
 standard_library.install_aliases()
 from builtins import range
+
+import logging
 import pickle as pickle
 from collections import Counter, defaultdict
 import numpy as np
@@ -22,7 +24,8 @@ except ImportError:
 from wphase.psi.taup_fortran import getPtime
 import wphase.psi.seismoutils as SU
 from wphase.psi.decimate import decimateTo1Hz, CannotDecimate
-from wphase import logger
+
+logger = logging.getLogger(__name__)
 
 def build_metadata_dict(
         inv,

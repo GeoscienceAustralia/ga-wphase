@@ -1,6 +1,12 @@
-"""
-wphase calculations.
-"""
+"""GA W-Phase root module. """
+
+import os
+import errno
+import json
+import logging
+
+import numpy as np
+
 
 try:
     # to avoid: Exception _tkinter.TclError
@@ -9,15 +15,11 @@ try:
 except Exception:
     pass
 
-import os
-import errno
-import json
+from . import settings
+from .result import jsonencode_np
+from ._runner_fdsn import runwphase as wphase_runner
 
-import numpy as np
-
-from wphase import settings, logger
-from wphase.result import jsonencode_np
-from wphase._runner_fdsn import runwphase as wphase_runner
+logger = logging.getLogger(__name__)
 
 def runwphase(
     output_dir,

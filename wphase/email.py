@@ -1,11 +1,13 @@
 """Send an email via Amazon SES or SMTP."""
 from __future__ import absolute_import, print_function
 
+
 from email.mime.text import MIMEText
 from email.utils import formatdate
+import logging
 from smtplib import SMTP, SMTP_SSL
 
-from wphase import logger
+logger = logging.getLogger(__name__)
 
 def send_email(recipients, subject, message, from_email=None, method='ses', **kwargs):
     """Send a simple HTML email via either SES or SMTP."""

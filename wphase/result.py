@@ -2,11 +2,12 @@ from __future__ import absolute_import
 from builtins import str
 from builtins import object
 from datetime import datetime
+import logging
 import json
 
 import numpy as np
 
-from wphase import logger
+logger = logging.getLogger(__name__)
 
 
 SC3_TIME_FORMAT="%Y-%m-%d %H:%M:%S.%f"

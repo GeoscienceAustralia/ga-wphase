@@ -4,10 +4,13 @@ Some utilities to make nice plots.
 from __future__ import absolute_import, print_function
 
 from builtins import range
-import numpy as np
+
+import logging
 from collections import OrderedDict
-from matplotlib.figure import Figure
+
+import numpy as np
 import matplotlib.colors as mcols
+from matplotlib.figure import Figure
 from scipy.interpolate import griddata
 from obspy.imaging.beachball import beach
 
@@ -18,9 +21,7 @@ try:
 except ImportError:
     pass
 
-from wphase import logger
-
-
+logger = logging.getLogger(__name__)
 
 def get_boundaries(lats,lons, xpnd=0.7):
     lnmn = lons.min()

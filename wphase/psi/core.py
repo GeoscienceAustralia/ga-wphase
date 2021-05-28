@@ -4,7 +4,7 @@ from __future__ import absolute_import, print_function
 
 from builtins import str
 from builtins import range
-import sys, os, glob, traceback
+import sys, os, glob, traceback, logging
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import Pool
 from timeit import default_timer as timer
@@ -32,22 +32,19 @@ try:
 except ImportError:
     from obspy.signal.invsim import paz2AmpValueOfFreqResp as paz_2_amplitude_value_of_freq_resp
 
-from wphase import logger
+from wphase import settings
 from .greens import GreensFunctions
 from .bandpass import bandpassfilter
+logger = logging.getLogger(__name__)
 
-class WPInvWarning(Exception):
+class InversionError(Exception):
     """
-    A 'terminal' condition that we do not consider to be an error.
+    A terminal condition that is not a malfunction of the software itself.
 
-    This should be raised if there is a problem with in input data or some other
-    issue from which we cannot recover.
+    This is usually raised if there is a problem with input data.
 
     :param str msg: The reason for termination.
     """
-
-    def __init__(self, msg):
-        super(WPInvWarning, self).__init__(msg)
 
 class RTdeconvError(Exception):
     pass
@@ -131,20 +128,6 @@ def wpinv(
 
     if output_dic is None:
         output_dic = {}
-
-    # utility for adding warnings to output_dict
-    def add_warning(msg):
-        if type(output_dic) is dict:
-            # note that the key must be the same as atws_wphase.settings.WARNINGS_KEY,
-            # but we can't import from that, here, and don't want to import
-            # from any non-standard package in atws_wphase.settings, so we just
-            # have to manually keep these in sync.
-            WARNINGS_KEY = 'Warnings'
-            if WARNINGS_KEY not in output_dic:
-                output_dic[WARNINGS_KEY] = []
-            output_dic[WARNINGS_KEY].append(msg)
-        else:
-            output_dic.add_warning(msg)
 
     # used to reject a channel if the fitting of the instrument response is
     # greater than this.  see "Source inversion of W phase - speeding up
@@ -283,7 +266,7 @@ def wpinv(
         # Fitting the instrument response and getting coefficients
         (om0, h, G) = getCOEFFfit(trmeta['sensitivity'],freq,AmpfromPAZ)
         if not np.all(np.isfinite([om0, h, G])):
-            logger.warning("Imposible to get Coeff. Skipping %s", tr.id)
+            logger.warning("Impossible to get Coeff. Skipping %s", tr.id)
             trlist.remove(tr.id)
             continue
 
@@ -344,9 +327,9 @@ def wpinv(
                          if tr_p2p[i] < median_rejection_coeff[1]*median_p2p
                          and tr_p2p[i] > median_rejection_coeff[0]*median_p2p]
     if not EnoughAzimuthalCoverage():
-        raise WPInvWarning("Lack of azimuthal coverage. Aborting.")
+        raise InversionError("Lack of azimuthal coverage. Aborting.")
     if len(accepted_traces) < N_st_min:
-        raise WPInvWarning("Lack of stations. Aborting.")
+        raise InversionError("Lack of stations. Aborting.")
 
     logger.info("Traces accepted for preliminary magnitude calculation: {}"
                 .format(len(accepted_traces)))
@@ -414,19 +397,20 @@ def wpinv(
         t2 = t1 + dist*wphase_cutoff
         tr = st_sel.select(id = trid)[0]
 
-        tr.data = np.array(tr.data,dtype=float)
-        if trmeta['transfer_function'] == "B":
+        tr.data = np.array(tr.data, dtype=float)
+        tf = trmeta['transfer_function']
+        if tf == "B":
             AmpfromPAZ  = Vpaz2freq(trmeta,freq/2./np.pi)  # hz to rad*hz
-        elif trmeta['transfer_function'] == "A":
+        elif tf == "A":
             AmpfromPAZ  = Vpaz2freq(trmeta,freq)
         else:
-            logger.warning("Unknown transfer function. Skipping %s", tr.id)
+            logger.warning("%s: Unknown transfer function %s. Skipping this trace", tr.id, tf)
             trlist.remove(tr.id)
             continue
 
-        (om0, h, G) = getCOEFFfit(trmeta['sensitivity'],freq,AmpfromPAZ)
+        (om0, h, G) = getCOEFFfit(trmeta['sensitivity'], freq, AmpfromPAZ)
         if not np.all(np.isfinite([om0, h, G])):
-            logger.warning("Impossible to get Coeff. Skipping %s", tr.id)
+            logger.warning("%s: Could not fit instrument response. Skipping this trace", tr.id)
             trlist.remove(tr.id)
             continue
 
@@ -434,11 +418,7 @@ def wpinv(
 
         try:
             tr.data, coeff = RTdeconv(
-                tr,
-                om0,
-                h,
-                G,
-                dt,
+                tr, om0, h, G, dt,
                 corners=4,
                 baselinelen=60./dt,
                 taperlen= 10.,
@@ -447,17 +427,17 @@ def wpinv(
                 get_coef = True)
 
         except RTdeconvError as e:
-            logger.warning("Error deconvolving trace %s: %s", tr.id, str(e))
+            logger.warning("%s: Skipping due to error in deconvolution: %s", tr.id, str(e))
             trlist.remove(tr.id)
             continue
 
         #Check length of the trace:
-        tr.trim(t1,t2)
-        if len(tr)== 0:
-            "Empty trace. Skipping", tr.id
+        tr.trim(t1, t2)
+        if len(tr) == 0:
+            logger.warning("%s: Trace is empty. Skipping this trace", tr.id)
             trlist.remove(tr.id)
             continue
-        tr_p2p.append(tr[:].max()-tr[:].min())
+        tr_p2p.append(tr[:].max() - tr[:].min())
 
         DIST.append(dist)
 
@@ -554,7 +534,7 @@ def wpinv(
             output_dic.pop('OL1', None)
             msg = "Only {} channels with possibly acceptable fits. Aborting.".format(len(trlist))
             logger.error(msg)
-            raise WPInvWarning(msg)
+            raise InversionError(msg)
 
         M, misfit, GFmatrix = core_inversion(
             t_h,
@@ -585,7 +565,7 @@ def wpinv(
         output_dic['OL2']['M'] = M
 
     if len(Ntrace) == 0:
-        add_warning("Could not calculate OL3: no data within tolerance")
+        logger.warning("Could not calculate OL3: no data within tolerance")
         return  M, ObservedDisp, syn, trlist, Ntrace, GFmatrix, DATA_INFO
 
     #############  Output Level 3   #############################

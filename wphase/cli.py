@@ -42,9 +42,8 @@ class LogRelay(logging.Handler):
             Logging.error(msg)
 
 # Send W-Phase logs and python warnings to seiscomp logs
-_logger = logger.getLogger()
-_logger.setLevel(logging.DEBUG)
-_logger.addHandler(LogRelay(level=logging.DEBUG))
+logger.setLevel(logging.DEBUG)
+logger.addHandler(LogRelay(level=logging.DEBUG))
 wlogger = logging.getLogger('py.warnings')
 wlogger.setLevel(logging.WARNING)
 wlogger.addHandler(LogRelay(level=logging.WARNING))

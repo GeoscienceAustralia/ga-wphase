@@ -100,9 +100,6 @@ MISFIT_KEY = 'Misfits'
 #: Key containing the host name.
 HOST_NAME_KEY = 'HostName'
 
-#: Key for errors caused by Antelope.
-INVERSION_ERROR_KEY = 'InversionError'
-
 #: Implementation of bandpass filter to use
 BANDPASS_IMPLEMENTATION = 'scipy'
 

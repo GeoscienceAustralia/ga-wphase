@@ -2,21 +2,47 @@ from __future__ import print_function
 from future import standard_library
 standard_library.install_aliases()
 from builtins import str
-import sys, os, traceback
+
+import sys, os, traceback, logging
 import pickle
 
+logger = logging.getLogger(__name__)
 
 import obspy
 from obspy.core.utcdatetime import UTCDateTime
 from obspy.clients.fdsn import Client
 from obspy.core.inventory import Inventory
 from wphase.psi.inventory import get_waveforms, build_metadata_dict
-from wphase.psi.core import wpinv, WPInvWarning
+from wphase.psi.core import wpinv, InversionError
 
 import wphase.settings as settings
 from wphase.wputils import OutputDict, WPInvProfiler, post_process_wpinv
-from wphase import logger
 
+
+class ArrayLogger(logging.Handler):
+    """Handler that captures log mesages and stores them in an array."""
+    def __init__(self, *args, **kwargs):
+        super(ArrayLogger, self).__init__(*args, **kwargs)
+        self.messages = []
+
+    def emit(self, record):
+        self.messages.append(self.format(record).strip())
+
+
+class LogCapture(object):
+    """Context manager to capture logs."""
+    def __init__(self, logger, level):
+        self.logger = logger
+        self.level = level
+        self.handler = ArrayLogger(level=level)
+
+    def __enter__(self):
+        self.logger.addHandler(self.handler)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.logger.removeHandler(self.handler)
+        self.messages = self.handler.messages
 
 
 def load_metadata(
@@ -232,14 +258,17 @@ def runwphase(
 
         # do and post-process the inversion
         with WPInvProfiler(wphase_output, output_dir):
-            inv = wpinv(
-                streams,
-                meta_t_p,
-                eqinfo,
-                greens_functions_dir,
-                processes = n_workers_in_pool,
-                OL = processing_level,
-                output_dic = wphase_output)
+            with LogCapture(logger, logging.WARNING) as capture:
+                inv = wpinv(
+                    streams,
+                    meta_t_p,
+                    eqinfo,
+                    greens_functions_dir,
+                    processes = n_workers_in_pool,
+                    OL = processing_level,
+                    output_dic = wphase_output)
+            for message in capture.messages:
+                wphase_output.add_warning(message)
 
             post_process_wpinv(
                 res = inv,
@@ -251,7 +280,7 @@ def runwphase(
                 make_maps=make_maps,
                 make_plots=make_plots)
 
-    except WPInvWarning as e:
+    except InversionError as e:
         wphase_output.add_warning(str(e))
     except Exception as e:
         if raise_errors:

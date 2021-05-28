@@ -7,10 +7,11 @@ from future import standard_library
 standard_library.install_aliases()
 from builtins import range
 import urllib.request, urllib.error, urllib.parse, sys
+import logging
 import math
 import numpy as np
 
-from wphase import logger
+logger = logging.getLogger(__name__)
 
 try:
     from obspy.geodetics import locations2degrees

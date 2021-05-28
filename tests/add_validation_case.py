@@ -10,7 +10,7 @@ from obspy import UTCDateTime
 
 from eatws_skip_client import SKIP, Event
 from wphase import runwphase
-from validation_cases import result_keys, TARBALL_SUBDIR, add_case
+from validation_cases import result_keys, DATA_DIR, add_case
 
 skip = SKIP('https://skip.eatws.net',
             secret_id='skip-prod-readonly-access')
@@ -19,7 +19,7 @@ logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 
 def prepare_test_case(evid, inventory=None, waveforms=None):
     event: Event = skip.get_event(evid)
-    datadir = abspath(TARBALL_SUBDIR)
+    datadir = abspath(DATA_DIR)
     if not event:
         raise ValueError('%s not found in SKIP' % evid)
     eqinfo = dict(
@@ -46,12 +46,11 @@ def prepare_test_case(evid, inventory=None, waveforms=None):
         time=event.event_time,
         _expected_results={k: MT[k] for k in result_keys},
     )
-    print("Adding this to validation_cases.json:")
     print(json.dumps(case, indent=4))
     add_case(case)
-    print("Input data has been written to test-datasets/.")
+    print("This test case has been added to validation_cases.json and test-datasets/.")
     print("To create a new release tarball: "
-          "tar czvf ga-wphase-test-datasets-VERSION.tar.gz test-datasets/")
+          "tar czvf ga-wphase-test-datasets.tar.gz test-datasets/ validation_cases.json")
 
 if __name__ == '__main__':
     prepare_test_case(*sys.argv[1:])

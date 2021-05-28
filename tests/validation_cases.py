@@ -11,15 +11,15 @@ from obspy.core import UTCDateTime
 
 logger = logging.getLogger("wphase.tests")
 
-DATASETS_URL = 'https://github.com/GeoscienceAustralia/ga-wphase/releases/download/v0.1/ga-wphase-test-datasets-v0.1.tar.gz'
-TARBALL_SUBDIR = 'test-datasets'
+DATASETS_URL = 'https://github.com/GeoscienceAustralia/ga-wphase/releases/download/v0.1/ga-wphase-test-datasets.tar.gz'
+DATA_DIR = 'test-datasets'
 TESTS_DIR = dirname(__file__)
 
-def fetch_datasets(url):
+def fetch_datasets():
     """Download and extract the test datasets."""
     tarball_path = join(TESTS_DIR, 'dl.tar.gz')
     logger.warning("Downloading test datasets from %s", DATASETS_URL)
-    urlretrieve(url, tarball_path)
+    urlretrieve(DATASETS_URL, tarball_path)
     with tarfile.open(tarball_path, "r:gz") as tarball:
         logger.warning("Extracting test datasets to %s", TESTS_DIR)
         tarball.extractall(path=TESTS_DIR)
@@ -30,10 +30,10 @@ def get_dataset(eqinfo):
     """Retrieve a test dataset, either from the local cache directory or from
     the web."""
     evid = eqinfo["id"]
-    wfpath = join(TESTS_DIR, TARBALL_SUBDIR, "{}.mseed".format(evid))
-    invpath = join(TESTS_DIR, TARBALL_SUBDIR, "{}.xml".format(evid))
+    wfpath = join(TESTS_DIR, DATA_DIR, "{}.mseed".format(evid))
+    invpath = join(TESTS_DIR, DATA_DIR, "{}.xml".format(evid))
     if not (exists(wfpath) and exists(invpath)):
-        fetch_datasets(DATASETS_URL)
+        fetch_datasets()
     if not (exists(wfpath) and exists(invpath)):
         raise Exception("Dataset {evid} missing even after running fetch_datasets!")
     inventory = obspy.read_inventory(invpath)
@@ -64,8 +64,15 @@ def dump_case(case):
         case['time'] = case['time'].strftime("%Y-%m-%dT%H:%M:%SZ")
     return case
 
-with open(join(TESTS_DIR, "validation_cases.json")) as fh:
-    cases = [parse_case(x) for x in json.load(fh)]
+def _load_cases():
+    with open(join(TESTS_DIR, "validation_cases.json")) as fh:
+        return [parse_case(x) for x in json.load(fh)]
+
+try:
+    cases = _load_cases()
+except FileNotFoundError:
+    fetch_datasets()
+    cases = _load_cases()
 
 def add_case(case):
     cases.append(case)

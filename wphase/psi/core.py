@@ -363,10 +363,6 @@ def wpinv(
     pre_strike = pre_param[2]
     t_h = pre_param[3]
 
-    if pre_wp_mag < 6.5:
-        add_warning("Preliminary magnitude less than 6.5... setting it to 6.5 and continuing")
-        pre_wp_mag = 6.5
-
     logger.info("OL1:")
     logger.info("Preliminary W-phase magnitude for the event: %.7f", pre_wp_mag)
 
@@ -743,11 +739,11 @@ def preliminary_magnitude(tr_p2p, dists, azis):
 
     # To mitigate this, we apply regularization to penalize large values of
     # x[1] and x[2]: the cost function becomes
-    #   F(x) = |Mx - B|^2 + λ(x_1^2 + x_2^2),
+    #   F(x) = |Mx - B|^2 + λ^2(x_1^2 + x_2^2),
     # which can be achieved by adding a couple rows to M and B:
 
-    LAMBDA = 1 # Regularization strength λ
-    M = np.concatenate((M, [[0, LAMBDA, 0], [0, 0, LAMBDA]]))
+    L = settings.AMPLITUDE_REGULARIZATION # Regularization strength λ^2
+    M = np.concatenate((M, [[0, L, 0], [0, 0, L]]))
     B = np.concatenate((B, [0, 0]))
 
     x = lstsq(M, B, rcond=None)[0]
@@ -759,8 +755,18 @@ def preliminary_magnitude(tr_p2p, dists, azis):
     m = np.log10(0.9 / 0.065)
     n = np.log10(0.9) - m * 8.5
 
-    # We need to add 3 because we use meters instead of mm.
-    pre_wp_mag = (np.log10(amp) - n + 3)/m
+    if amp > 0:
+        # We need to add 3 because we use meters instead of mm.
+        pre_wp_mag = (np.log10(amp) - n + 3)/m
+    else:
+        pre_wp_mag = 0
+
+    min_mag = settings.MINIMUM_PRELIMINARY_MAGNITUDE
+    if pre_wp_mag < min_mag:
+        logger.warning("Preliminary magnitude %.1f is less than %.1f. "
+                       "Setting it to %.1f and continuing",
+                       pre_wp_mag, min_mag, min_mag)
+        pre_wp_mag = 6.5
 
     # Scalar moment in dyne * cm:
     M0 = 10 ** (1.5 * pre_wp_mag + 16.1)

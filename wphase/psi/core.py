@@ -67,7 +67,7 @@ def wpinv(
 
     :param dict metadata: Station metadata. Each key is a station ID and
         the values are a dictionaries with the metadata. Each dictionary
-        should look like\:
+        should look like:
 
         .. code-block:: python
 
@@ -264,11 +264,13 @@ def wpinv(
             continue
 
         # Fitting the instrument response and getting coefficients
-        (om0, h, G) = getCOEFFfit(trmeta['sensitivity'],freq,AmpfromPAZ)
-        if not np.all(np.isfinite([om0, h, G])):
+        response_coefficients = getCOEFFfit(trmeta['sensitivity'],freq,AmpfromPAZ)
+        if response_coefficients is None:
             logger.warning("Impossible to get Coeff. Skipping %s", tr.id)
             trlist.remove(tr.id)
             continue
+        else:
+            om0, h, G = response_coefficients
 
         AmpfromCOEFF= np.abs(omega*omega / \
                 (omega*omega + 2j*h*om0*omega - om0*om0))
@@ -408,11 +410,13 @@ def wpinv(
             trlist.remove(tr.id)
             continue
 
-        (om0, h, G) = getCOEFFfit(trmeta['sensitivity'], freq, AmpfromPAZ)
-        if not np.all(np.isfinite([om0, h, G])):
+        response_coefficients = getCOEFFfit(trmeta['sensitivity'],freq,AmpfromPAZ)
+        if response_coefficients is None:
             logger.warning("%s: Could not fit instrument response. Skipping this trace", tr.id)
             trlist.remove(tr.id)
             continue
+        else:
+            om0, h, G = response_coefficients
 
         DATA_INFO[tr.id] = [om0, h, G, dt, t1, t2]
 
@@ -743,7 +747,7 @@ def preliminary_magnitude(tr_p2p, dists, azis):
 
     min_mag = settings.MINIMUM_PRELIMINARY_MAGNITUDE
     if pre_wp_mag < min_mag:
-        logger.warning("Preliminary magnitude %.1f is less than %.1f. "
+        logger.warning("Preliminary magnitude %.2f is less than %.1f. "
                        "Setting it to %.1f and continuing",
                        pre_wp_mag, min_mag, min_mag)
         pre_wp_mag = 6.5
@@ -782,13 +786,18 @@ def getCOEFFfit(sens, freq, resp):
     :return: Tuple containing the three time domain deconvolution coefficients.
     """
 
-    X = (2.*np.pi*freq)**2
-    Y = X*X*(1./resp/resp-1.)
-    fit = np.polyfit(X,Y,1)
-    G = sens
-    om0 = fit[1]**(.25)
-    h = np.sqrt(fit[0]/4./np.sqrt(fit[1]) + 0.5)
-    return (om0, h, G)
+    try:
+        with np.errstate(invalid='raise'):
+            X = (2.*np.pi*freq)**2
+            Y = X*X*(1./resp/resp-1.)
+            fit = np.polyfit(X,Y,1)
+            G = sens
+            om0 = fit[1]**(.25)
+            h = np.sqrt(fit[0]/4./np.sqrt(fit[1]) + 0.5)
+    except FloatingPointError:
+        return None
+    else:
+        return (om0, h, G)
 
 
 

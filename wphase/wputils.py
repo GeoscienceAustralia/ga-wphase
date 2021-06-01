@@ -13,17 +13,15 @@ import matplotlib
 matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
-from obspy.imaging import beachball
-
 try:
-    plot_beachball = beachball.beachball
-except AttributeError:
-    plot_beachball = beachball.Beachball
+    from obspy.imaging.beachball import (beachball as plot_beachball,
+                                         aux_plane, mt2plane, MomentTensor)
+except ImportError:
+    from obspy.imaging.beachball import (Beachball as plot_beachball,
+                                         AuxPlane as aux_plane,
+                                         MT2Plane as mt2plane,
+                                         MomentTensor)
 
-try:
-    aux_plane = beachball.AuxPlane
-except Exception:
-    aux_plane = beachball.aux_plane
 
 from wphase.psi import seismoutils
 from wphase.psi.plotutils import plot_field, stacov
@@ -137,11 +135,6 @@ def wpinv_for_eatws(M, cenloc):
     :return: antelope's moment tensor info in a dictionary.
     """
 
-    try:
-        mt2plane = beachball.mt2plane
-    except AttributeError as e:
-        mt2plane = beachball.MT2Plane
-
     results = {}
     results['tmpp'] = M[2]
     results['tmrp'] = M[4]
@@ -163,7 +156,7 @@ def wpinv_for_eatws(M, cenloc):
     results['drlon'] = cenloc[1]
     results['drdepth'] = cenloc[2]
 
-    moment_tensor = beachball.MomentTensor(M, 0)
+    moment_tensor = MomentTensor(M, 0)
     nodalplane = mt2plane(moment_tensor)
     results['str1'] = nodalplane.strike
     results['dip1'] = nodalplane.dip
@@ -223,6 +216,7 @@ def post_process_wpinv(
                     settings.WPHASE_BEACHBALL_PREFIX)
                 plot_beachball(M_OL2, width=400,
                     outfile = beachBallPrefix + "_OL2.png", format='png')
+                plt.close('all') # obspy doesn't clean up after itself...
             except Exception:
                 wphase_output.add_warning("Failed to create beachball for OL2.")
 
@@ -245,6 +239,7 @@ def post_process_wpinv(
                 settings.WPHASE_BEACHBALL_PREFIX, WPOL))
             plot_beachball(M, width=400,
                 outfile = beachBallPrefix + ".png", format='png')
+            plt.close('all') # obspy doesn't clean up after itself...
         except Exception:
             wphase_output.add_warning("Failed to create beachball for OL{}.".format(
                 WPOL))

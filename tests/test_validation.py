@@ -13,7 +13,7 @@ from validation_cases import cases, get_dataset, result_keys
 
 
 def assert_allclose(a, b):
-    numpy.testing.assert_allclose(a, b, rtol=1e-3)
+    numpy.testing.assert_allclose(a, b, rtol=0.01) # we tolerate a 1% error
 
 @pytest.mark.parametrize("eqinfo", cases, ids=lambda c: c['id'])
 def test_validity_from_fixed_datasets(eqinfo, tmpdir):

@@ -1,3 +1,5 @@
+"""Implements runwphase, which acquires data from FDSN and runs the W-Phase
+inversion, including post-processing."""
 from __future__ import print_function
 from future import standard_library
 standard_library.install_aliases()
@@ -259,7 +261,7 @@ def runwphase(
         # do and post-process the inversion
         with WPInvProfiler(wphase_output, output_dir):
             with LogCapture(logger, logging.WARNING) as capture:
-                inv = wpinv(
+                res = wpinv(
                     streams,
                     meta_t_p,
                     eqinfo,
@@ -271,7 +273,7 @@ def runwphase(
                 wphase_output.add_warning(message)
 
             post_process_wpinv(
-                res = inv,
+                res = res,
                 wphase_output = wphase_output,
                 WPOL = processing_level,
                 working_dir = output_dir,

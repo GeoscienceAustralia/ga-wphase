@@ -27,6 +27,7 @@ except Exception:
 
 from wphase.psi import seismoutils
 from wphase.psi.plotutils import plot_field, stacov
+from wphase.psi.model import OL1, OL2, OL3
 from wphase import settings
 
 
@@ -194,24 +195,25 @@ def post_process_wpinv(
     make_maps=True,
     make_plots=True):
 
-    # if we could not do OL3, resort to OL2
-    if WPOL == 3 and 'OL3' not in wphase_output:
-        # NOTE: no warning added as it is assumed one would be added in wpinv
-        WPOL = 2
 
     M_OL2 = None
+    WPOL = 1
     # extract the results to local variables
-    if WPOL==2:
-        if len(res) == 7:  # new FFI version
-            M, obs, syn, trlist, Ntrace, GFmatrix, DATA_INFO = res
-        else:  # original "GA" versions
-            M, obs, syn, trlist, Ntrace = res
-    elif WPOL==3:
+    if isinstance(res, OL2):
+        WPOL = 2
+        M = res.moment_tensor
+        obs = res.observed_displacements
+        syn = res.synthetic_displacements
+        traces = res.trace_lengths
+    else:
+        traces = list(res.preliminary_calc_details['trids'])
+
+    if isinstance(res, OL3):
+        WPOL = 3
         M_OL2 = wphase_output['OL2'].pop('M')
-        if len(res) == 10:  # new FFI version
-            M, obs, syn, trlist, Ntrace, cenloc, t_d, inputs_latlon, moments, DATA_INFO = res
-        else:   # original "GA" versions
-            M, obs, syn, trlist, Ntrace, cenloc = res
+        cenloc = res.centroid
+        inputs_latlon = res.grid_search_candidates
+        moments = res.grid_search_results
 
         if make_plots:
             try:
@@ -227,13 +229,14 @@ def post_process_wpinv(
     if 'OL2' in wphase_output:
         wphase_output['OL2'].pop('M', None)
 
-    wphase_output['QualityParams']['azimuthal_gap'] = seismoutils.AzimuthalGap(
-            metadata,
-            trlist,
-            (eqinfo['lat'], eqinfo['lon']))[0]
-    wphase_output['QualityParams']['number_of_stations'] = len(set(
-        trid.split('.')[1] for trid in trlist))
-    wphase_output['QualityParams']['number_of_channels'] = len(trlist)
+    if WPOL >= 2:
+        wphase_output['QualityParams']['azimuthal_gap'] = seismoutils.AzimuthalGap(
+                metadata,
+                traces,
+                (eqinfo['lat'], eqinfo['lon']))[0]
+        wphase_output['QualityParams']['number_of_stations'] = len(set(
+            trid.split('.')[1] for trid in traces))
+        wphase_output['QualityParams']['number_of_channels'] = len(traces)
 
     if make_plots:
         try:
@@ -251,8 +254,8 @@ def post_process_wpinv(
             # Make a plot of the station distribution
             hyplat =  eqinfo['lat']
             hyplon =  eqinfo['lon']
-            lats = [metadata[trid]['latitude'] for trid in trlist]
-            lons = [metadata[trid]['longitude'] for trid in trlist]
+            lats = [metadata[trid]['latitude'] for trid in traces]
+            lons = [metadata[trid]['longitude'] for trid in traces]
             stationDistPrefix = os.path.join(
                 working_dir,
                 settings.WPHASE_STATION_DISTRIBUTION_PREFIX)
@@ -265,7 +268,7 @@ def post_process_wpinv(
         except Exception:
             wphase_output.add_warning("Failed to create station distribtuion plot.")
 
-    if make_plots and len(trlist):
+    if WPOL >= 2 and make_plots and len(traces):
         # Secondly the wphase traces plot, syn Vs obs
         class PlotContext(object):
             """
@@ -281,7 +284,7 @@ def post_process_wpinv(
                 self.xlabel.append(label)
 
             def save_image(self, folder, syn, obs, formats=['png']):
-                fig = plt.figure(figsize=(14, 7))
+                fig = matplotlib.figure.Figure(figsize=(14, 7))
                 ax = fig.add_subplot(1, 1, 1)
                 ax.set_title("Wphase Results (Red: Synthetic, Blue: Observed)")
                 ax.plot(syn, color="red")
@@ -292,12 +295,11 @@ def post_process_wpinv(
                 for offset in self.xticks:
                     ax.axvline(offset, color='0.1')
                 for fmt in formats:
-                    plt.savefig(
+                    fig.savefig(
                         os.path.join(folder, '{}.{}'.format(self.name, fmt)),
                         dpi=120,
                         format=fmt,
                         bbox_inches='tight')
-                plt.close(fig)
 
         class CreatePlots(object):
             """
@@ -311,7 +313,7 @@ def post_process_wpinv(
             :param obs: The observed data (for all stations).
             :param n_traces: The number of traces (i.e. stations).
 
-            .. note:: This used objects *Ntrace* and *trlist* which are
+            .. note:: This uses *traces* which is
                 currently defined in the enclosing scope.
             """
             def __init__(self, folder, prefix, syn, obs, n_traces):
@@ -332,8 +334,8 @@ def post_process_wpinv(
 
                 # generate the plots
                 offset = 0
-                for i, trid in enumerate(trlist):
-                    offset += Ntrace[i]
+                for trid, trlen in traces.items():
+                    offset += trlen
                     self.add_tick(offset, trid.split('.')[1])
 
             def add_tick(self, tick_pos, label):
@@ -383,13 +385,13 @@ def post_process_wpinv(
             settings.WPHASE_RESULTS_TRACES_PREFIX,
             syn,
             obs,
-            len(trlist))
+            len(traces))
 
     elif make_plots:
         wphase_output.add_warning('Could not create wphase results plot.')
 
     if WPOL==3:
-        results = wpinv_for_eatws(res[0], cenloc)
+        results = wpinv_for_eatws(M, cenloc)
         wphase_output['MomentTensor'] = results
 
         # Only 3 has cenloc...

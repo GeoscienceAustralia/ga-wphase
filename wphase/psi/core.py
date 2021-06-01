@@ -4,6 +4,7 @@ from __future__ import absolute_import, print_function
 
 from builtins import str
 from builtins import range
+from collections import OrderedDict
 import sys, os, glob, traceback, logging
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import Pool
@@ -35,6 +36,7 @@ except ImportError:
 from wphase import settings
 from .greens import GreensFunctions
 from .bandpass import bandpassfilter
+from .model import OL1, OL2, OL3
 logger = logging.getLogger(__name__)
 
 class InversionError(Exception):
@@ -114,7 +116,7 @@ def wpinv(
             #. List with the stations contributing to the final solution,
                 sorted according to epicentral distance.
             #. List with the lengths of each trace in trlist. Note that
-                sum(Ntrace) = len(ObservedDisp) = len(syn).
+                sum(trlen) = len(observed_displacements) = len(syn).
 
         - OL = 3, Same as OL2 plus:
             5. Optimal centroid location (lat, lon, dep).
@@ -341,12 +343,10 @@ def wpinv(
     DIST_con   = [DIST[i] for i in accepted_traces]
     AZI_con    = [AZI[i] for i in accepted_traces]
     trlist_pre_con = [trlist_pre[i] for i in accepted_traces]
-    pre_param = preliminary_magnitude(tr_p2p_con, DIST_con, AZI_con)
+    pre_results = preliminary_magnitude(tr_p2p_con, DIST_con, AZI_con, trlist_pre_con)
 
-    pre_wp_mag = pre_param[0]
-    pre_M0 =  pre_param[1]
-    pre_strike = pre_param[2]
-    t_h = pre_param[3]
+    pre_wp_mag = pre_results['magnitude']
+    t_h = pre_results['t_h']
 
     logger.info("OL1:")
     logger.info("Preliminary W-phase magnitude for the event: %.7f", pre_wp_mag)
@@ -356,9 +356,12 @@ def wpinv(
     output_dic['OL1']['nstations'] = len(accepted_traces)
     output_dic['OL1']['used_traces'] = trlist
 
+    ol1 = OL1(
+        preliminary_magnitude=pre_wp_mag,
+        preliminary_calc_details=pre_results,
+    )
     if OL==1:
-        return pre_wp_mag, trlist_pre_con, tr_p2p_con
-
+        return ol1
     #############  Output Level 2    #######################################
     #############  Moment Tensor based on preliminary hypercenter (PDE) ####
     # Much of what follows is the same as what was done above, but we will be
@@ -450,8 +453,8 @@ def wpinv(
     tr_p2p = [tr_p2p[i] for i in np.argsort(DIST)]
 
     # Rejecting outliers:
-    ObservedDisp = np.array([]) # observed displacements vector.
-    Ntrace = [] # A list with the length of each station data.
+    observed_displacements = np.array([]) # observed displacements vector.
+    trlen = [] # A list with the length of each station data.
     trlist2 = trlist[:]
 
     median_AMP = np.median(tr_p2p)
@@ -462,8 +465,8 @@ def wpinv(
 
         else:
             tr = st_sel.select(id = trlist[i])[0]
-            ObservedDisp =  np.append(ObservedDisp, tr.data[:],0)
-            Ntrace.append(len(tr))
+            observed_displacements =  np.append(observed_displacements, tr.data[:],0)
+            trlen.append(len(tr))
     trlist = trlist2[:]
 
     logger.info('number of traces for OL2: %d', len(trlist))
@@ -485,8 +488,8 @@ def wpinv(
         orig,
         (Ta, Tb),
         MRF,
-        ObservedDisp,
-        Ntrace,
+        observed_displacements,
+        trlen,
         metadata,
         trlist,
         gfdir=gfdir,
@@ -495,7 +498,7 @@ def wpinv(
     )
 
     # inputs for the TIME DELAY search
-    inputs = [(t_d_test, GFmatrix, Ntrace, ObservedDisp, max_t_d) for t_d_test in time_delays]
+    inputs = [(t_d_test, GFmatrix, trlen, observed_displacements, max_t_d) for t_d_test in time_delays]
     with ProcessPoolExecutor() as pool:
         misfits = list(pool.map(get_timedelay_misfit_wrapper,inputs))
 
@@ -516,8 +519,8 @@ def wpinv(
         orig,
         (Ta, Tb),
         MRF,
-        ObservedDisp,
-        Ntrace,
+        observed_displacements,
+        trlen,
         metadata,
         trlist,
         gfdir=gfdir,
@@ -526,13 +529,13 @@ def wpinv(
     # Remove bad traces
     for tol in misfit_tol:
         # Make sure there are enough channels
-        GFmatrix, ObservedDisp, trlist, Ntrace = remove_individual_traces(
+        GFmatrix, observed_displacements, trlist, trlen = remove_individual_traces(
             tol,
             M,
             GFmatrix,
-            ObservedDisp,
+            observed_displacements,
             trlist,
-            Ntrace)
+            trlen)
 
         if len(trlist) < minium_num_channels:
             output_dic.pop('OL1', None)
@@ -547,8 +550,8 @@ def wpinv(
             orig,
             (Ta,Tb),
             MRF,
-            ObservedDisp,
-            Ntrace,
+            observed_displacements,
+            trlen,
             metadata,
             trlist,
             gfdir=gfdir,
@@ -563,14 +566,21 @@ def wpinv(
 
     output_dic['OL2'] = MT_result(M, misfit, hypdep, t_d)
 
+    ol2 = OL2(
+        moment_tensor=M,
+        observed_displacements=observed_displacements,
+        synthetic_displacements=syn,
+        trace_lengths=OrderedDict(zip(trlist, trlen)),
+        **ol1,
+    )
     if OL==2:
-        return  M, ObservedDisp, syn, trlist, Ntrace, GFmatrix, DATA_INFO
+        return ol2
     else:
         output_dic['OL2']['M'] = M
 
-    if len(Ntrace) == 0:
+    if len(trlen) == 0:
         logger.warning("Could not calculate OL3: no data within tolerance")
-        return  M, ObservedDisp, syn, trlist, Ntrace, GFmatrix, DATA_INFO
+        return ol2
 
     #############  Output Level 3   #############################
     ###Moment Tensor based on grid search  ######################
@@ -583,8 +593,8 @@ def wpinv(
     latlons = [(lat, lon) for lat in lat_grid for lon in lon_grid]
 
     inputs_latlon = [(t_h, t_d, (lat, lon, hypdep), orig, (Ta, Tb), MRF,
-                      ObservedDisp, Ntrace, metadata, trlist, greens,
-                      True, dict(residuals=False))
+                      observed_displacements, trlen, metadata, trlist, greens,
+                      dict(residuals=False))
                      for lat, lon in latlons]
 
     with ProcessPoolExecutor() as pool:
@@ -598,8 +608,8 @@ def wpinv(
     logger.debug("Depth grid size: %d", len(deps_grid))
 
     inputs = [(t_h, t_d, (cenlat, cenlon, depth), orig, (Ta,Tb),
-               MRF, ObservedDisp, Ntrace, metadata, trlist, greens,
-               True, dict(residuals=False))
+               MRF, observed_displacements, trlen, metadata, trlist, greens,
+               dict(residuals=False))
               for depth in deps_grid]
 
     with ProcessPoolExecutor() as pool:
@@ -612,8 +622,8 @@ def wpinv(
     ###Final inversion!!
 
     M, misfit, GFmatrix = core_inversion(t_h, t_d, (cenlat, cenlon, cendep),
-                                         orig, (Ta,Tb), MRF, ObservedDisp,
-                                         Ntrace, metadata, trlist, gfdir=gfdir,
+                                         orig, (Ta,Tb), MRF, observed_displacements,
+                                         trlen, metadata, trlist, gfdir=gfdir,
                                          GFs=True)
 
     syn = (M[0]*GFmatrix[:,0] + M[1]*GFmatrix[:,1]
@@ -625,7 +635,17 @@ def wpinv(
     output_dic['OL3'] = MT_result(M, misfit, cendep, t_d)
 
     cenloc = (cenlat,cenlon,cendep)
-    return M, ObservedDisp, syn, trlist, Ntrace, cenloc, t_d, inputs_latlon, moments, DATA_INFO
+    return OL3(
+        moment_tensor=M,
+        observed_displacements=observed_displacements,
+        synthetic_displacements=syn,
+        trace_lengths=OrderedDict(zip(trlist, trlen)),
+        centroid=cenloc,
+        time_delay=t_d,
+        grid_search_candidates=inputs_latlon,
+        grid_search_results=moments,
+        **ol1,
+    )
 
 
 def MomentRateFunction(t_h, dt):
@@ -672,13 +692,14 @@ def get_corner_freqs_from_mag(Mw):
 
 
 
-def preliminary_magnitude(tr_p2p, dists, azis):
+def preliminary_magnitude(tr_p2p, dists, azis, trids):
     '''
     Compute the preliminary magnitude.
 
     :param list tr_p2p: Peak to peak amplitudes for each trace.
     :param list dists: station - epi distances in deg for each trace.
     :param list azis: station - epi azimuths in degrees for each trace.
+    :param list trids: station IDs
 
     :return: tuple containing:
 
@@ -690,17 +711,18 @@ def preliminary_magnitude(tr_p2p, dists, azis):
 
     # Attenuation relation q(Δ) for W-phase amplitudes as a function of distance.
     # Lifted directly from Kanamori et al 2008.
-    distance = np.array([5.,  10., 20., 30., 40., 50.,  60.,  70.,  80.,  90.5])
-    atten    = np.array([1.5, 1.4, 1.2, 1.0, 0.7, 0.56, 0.61, 0.56, 0.50, 0.52 ])
-    atten_func = interp1d(distance, atten, kind = 'cubic')
+    q = interp1d([5.,  10., 20., 30., 40., 50.,  60.,  70.,  80.,  90.5],
+                 [1.5, 1.4, 1.2, 1.0, 0.7, 0.56, 0.61, 0.56, 0.50, 0.52 ],
+                 kind = 'cubic')
+    corrected_amplitudes = tr_p2p / q(dists)
 
     azis = np.array(azis) * np.pi/180. # Φ: azimuths in radians
     N = len(tr_p2p)
 
     # We set out to solve the system Mx = B in the least squares sense, where
     #
-    # ith row of M = [1, cos(2Φ_i), sin(2Φ_i)]
-    #            x = [2a - b, -b cos(2Φ_0), -b sin(2Φ_0)]
+    # ith row of M = [1, -cos(2Φ_i), -sin(2Φ_i)]
+    #            x = [2a - b, b cos(2Φ_0), b sin(2Φ_0)]
     # ith row of B = 2 max |u_w_i| / q(Δ_i)
     #
     # Applying some trig identities shows that this matrix equation is
@@ -709,11 +731,11 @@ def preliminary_magnitude(tr_p2p, dists, azis):
     # The extra factors of 2 here are explained by our usage of p2p amplitudes
     # versus Kanamori's usage of semi-amplitudes.
 
-    B = tr_p2p / atten_func(dists)
+    B = corrected_amplitudes
     M = np.zeros((N,3))
     M[:,0] = 1
-    M[:,1] = np.cos(2*azis)
-    M[:,2] = np.sin(2*azis)
+    M[:,1] = -np.cos(2*azis)
+    M[:,2] = -np.sin(2*azis)
 
     # HOWEVER, this ordinary least-squares solution is somewhat brittle: the
     # azimuthal variation of the amplitude can sometimes arrange itself such
@@ -735,7 +757,8 @@ def preliminary_magnitude(tr_p2p, dists, azis):
 
     # Empirical coeff. for W-phase mag. log(a-b/2) = m*(M_w) + n
     # TODO: explain where these come from! Couldn't find them written down in
-    # the paper (there was just a graph with a trendline).
+    # the paper - there was just a graph with a trendline.
+    # Did someone get a ruler out!?
     m = np.log10(0.9 / 0.065)
     n = np.log10(0.9) - m * 8.5
 
@@ -743,8 +766,10 @@ def preliminary_magnitude(tr_p2p, dists, azis):
         # We need to add 3 because we use meters instead of mm.
         pre_wp_mag = (np.log10(amp) - n + 3)/m
     else:
+        logger.warning("Preliminary magnitude fit returned a negative amplitude!")
         pre_wp_mag = 0
 
+    unclamped = pre_wp_mag
     min_mag = settings.MINIMUM_PRELIMINARY_MAGNITUDE
     if pre_wp_mag < min_mag:
         logger.warning("Preliminary magnitude %.2f is less than %.1f. "
@@ -762,9 +787,21 @@ def preliminary_magnitude(tr_p2p, dists, azis):
     # Our estimate of Φ_0.
     # I need to check this. I do not know the convention
     # for the strike I should use.
-    pre_strike = 0.5 * np.arctan2(x[2], x[1]) * 180./np.pi
+    pre_strike = (0.5 * np.arctan2(x[2], x[1]) * 180./np.pi) % 360
 
-    return pre_wp_mag, M0, pre_strike, t_h
+    return dict(
+        magnitude=pre_wp_mag,
+        unclamped_magnitude=unclamped,
+        M0=M0,
+        t_h=t_h,
+        regularization=L,
+        strike=pre_strike,                         # Φ_0
+        average_amplitude=amp,                     # a - b/2
+        anisotropy=np.sqrt(x[1]*x[1] + x[2]*x[2]), # b
+        corrected_amplitudes=corrected_amplitudes,
+        azimuths=azis,
+        trids=trids,
+    )
 
 
 
@@ -894,7 +931,7 @@ def RTdeconv(
 
 
 def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
-                   ObservedDisp, Ntrace, metadata, trlist,
+                   observed_displacements, trlen, metadata, trlist,
                    gfdir,
                    GFs = False, residuals = False,
                    OnlyGetFullGF=False, Max_t_d=200,
@@ -909,8 +946,8 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
     :type orig: :py:class:`obspy.core.obspy.core.utcdatetime.UTCDateTime`
     :param tuple periods: (Ta,Tb), passband periods.
     :param array MRF: Moment rate function.
-    :param array ObservedDisp: Array containing concatenated traces of observed disp.
-    :param array Ntraces: Array containing the length of each trace.
+    :param array observed_displacements: Array containing concatenated traces of observed disp.
+    :param array trlen: Array containing the length of each trace.
     :param dict metadata: Dictionary with the metadata of each station.
     :param list trlist: List with the station id which will contribute to the inv.
     :param gfdir: Path to the greens functions or a GreensFunctions instances.
@@ -949,17 +986,17 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
     # Index of the first value that will be valid after convolution with MRF.
     first_valid_time = int(len(MRF)/2.)
 
-    # the indicies of the beginning and end of each trace in observed displacements (ObservedDisp)
-    indexes =  np.array(np.concatenate((np.array([0.]), np.cumsum(Ntrace))), dtype='int')
+    # the indices of the beginning and end of each trace in observed displacements
+    indexes =  np.array(np.concatenate((np.array([0.]), np.cumsum(trlen))), dtype='int')
 
 
     if OnlyGetFullGF:
         Max_t_d = int(Max_t_d)
-        Nst = len(Ntrace)
-        GFmatrix = np.zeros((np.array(Ntrace, dtype=int).sum() + Max_t_d*Nst, 5))
+        Nst = len(trlen)
+        GFmatrix = np.zeros((np.array(trlen, dtype=int).sum() + Max_t_d*Nst, 5))
         tb = 0
     else:
-        GFmatrix = np.zeros((np.array(Ntrace, dtype=int).sum(), 5))
+        GFmatrix = np.zeros((np.array(trlen, dtype=int).sum(), 5))
 
     #### Inversion:
     for i, trid in enumerate(trlist):
@@ -1011,10 +1048,10 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
 
         if OnlyGetFullGF:
             synth = ltrim(synth, t_p - Max_t_d, delta)
-            synth = synth[:, :Ntrace[i] + Max_t_d]
+            synth = synth[:, :trlen[i] + Max_t_d]
         else:
             synth = ltrim(synth, t_p - t_d, delta)
-            synth = synth[:, :Ntrace[i]]
+            synth = synth[:, :trlen[i]]
 
         if OnlyGetFullGF:
             ta = tb
@@ -1034,7 +1071,7 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
         return GFmatrix
 
     # perform the inversion
-    inversion = lstsq(GFmatrix, ObservedDisp, rcond=None)
+    inversion = lstsq(GFmatrix, observed_displacements, rcond=None)
     M = inversion[0]
 
     # construct the synthetics
@@ -1048,7 +1085,7 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
     if residuals:
         misfit = float(inversion[1])
     else:
-        misfit = 100.*np.sqrt(np.sum((syn-ObservedDisp)**2)/np.sum(syn**2))
+        misfit = 100.*np.sqrt(np.sum((syn-observed_displacements)**2)/np.sum(syn**2))
 
     if GFs:
         return M, misfit, GFmatrix
@@ -1118,8 +1155,8 @@ def core_inversion_wrapper(allarg):
 
 
 
-def remove_individual_traces(tol, M, GFmatrix, ObservedDisp,
-                                  trlist, Ntrace):
+def remove_individual_traces(tol, M, GFmatrix, observed_displacements,
+                                  trlist, trlen):
     '''
     Remove any trace with an indivudual misfit higher than *tol*.
 
@@ -1128,7 +1165,7 @@ def remove_individual_traces(tol, M, GFmatrix, ObservedDisp,
     :param array GFmatrix: Greens function matrix.
     :param array Observed Disp: The observed displacements.
     :param list trlist: ???
-    :param list Ntrace: List containing the lengths of the traces in *trlist*.
+    :param list trlen: List containing the lengths of the traces in *trlist*.
 
     :return: Tuple containing the
 
@@ -1143,7 +1180,7 @@ def remove_individual_traces(tol, M, GFmatrix, ObservedDisp,
     GFmatrix_fix = np.zeros((1,5))
     ObservedDisp_fix = np.zeros(1)
     trlist_fix = []
-    Ntrace_fix = []
+    trlen_fix = []
     M = np.delete(M,2)
 
     # construct the synthetic trace
@@ -1152,30 +1189,30 @@ def remove_individual_traces(tol, M, GFmatrix, ObservedDisp,
     for i, trid in enumerate(trlist):
         # get the observed and synthetic traces for a channel
         n1 = j
-        n2 = Ntrace[i] + j
-        obs = ObservedDisp[n1:n2]
+        n2 = trlen[i] + j
+        obs = observed_displacements[n1:n2]
         syn2 = syn[n1:n2]
 
         # calculate the misfit for the channel
         misfit = 100.*np.linalg.norm(syn2-obs)\
                  /np.linalg.norm(syn2)
 
-        j += Ntrace[i]
+        j += trlen[i]
 
         # add the trace to the remaining traces if misfit is within tolerance.
         if misfit <= tol :
             ObservedDisp_fix = np.append(ObservedDisp_fix, obs)
             GFmatrix_fix = np.append(GFmatrix_fix, GFmatrix[n1:n2,:], axis=0)
             trlist_fix.append(trid)
-            Ntrace_fix.append(Ntrace[i])
+            trlen_fix.append(trlen[i])
 
     # build the result
     GFmatrix = GFmatrix_fix[1:,:]
-    ObservedDisp = ObservedDisp_fix[1:]
+    observed_displacements = ObservedDisp_fix[1:]
     trlist = trlist_fix[:]
-    Ntrace = Ntrace_fix[:]
+    trlen = trlen_fix[:]
 
-    return GFmatrix, ObservedDisp, trlist, Ntrace
+    return GFmatrix, observed_displacements, trlist, trlen
 
 
 def rot_12_NE(st, META):
@@ -1231,25 +1268,22 @@ def get_timedelay_misfit_wrapper(args):
 
 
 
-def get_timedelay_misfit(t_d, GFmatrix, Ntrace, ObservedDisp, max_t_d):
+def get_timedelay_misfit(t_d, GFmatrix, trlen, observed_displacements, max_t_d):
     try:
         max_t_d = int(max_t_d)
         t_d = int(t_d)
         t_d2 = max_t_d - t_d
-        GFmatrix_sm = np.zeros((np.array(Ntrace,dtype=np.int).sum(),5))
-        cumNtraces = np.concatenate(([0], np.array(Ntrace,dtype=np.int).cumsum()))
-        #aryNtrace = np.asarray(Ntrace, dtype=np.int)
-        #GFmatrix_sm = np.zeros((aryNtrace.sum(),5))
-        #cumNtraces = np.concatenate(([0], aryNtrace.cumsum()))
+        GFmatrix_sm = np.zeros((np.array(trlen,dtype=np.int).sum(),5))
+        cumtrlens = np.concatenate(([0], np.array(trlen,dtype=np.int).cumsum()))
         tb_fm = 0
-        for i_ntr, ta in enumerate(cumNtraces[:-1]):
-            trlen = Ntrace[i_ntr]
-            tb = ta + trlen
+        for i_ntr, ta in enumerate(cumtrlens[:-1]):
+            l = trlen[i_ntr]
+            tb = ta + l
             ta_fm = tb_fm
             tb_fm = ta_fm +  max_t_d + tb-ta
-            GFmatrix_sm[ta:tb] = GFmatrix[ta_fm + t_d2 :ta_fm + t_d2 + trlen]
+            GFmatrix_sm[ta:tb] = GFmatrix[ta_fm + t_d2 :ta_fm + t_d2 + l]
 
-        inversion = lstsq(GFmatrix_sm, ObservedDisp, rcond=None)
+        inversion = lstsq(GFmatrix_sm, observed_displacements, rcond=None)
         return inversion[1][0]
     except Exception:
         raise Exception("".join(traceback.format_exception(*sys.exc_info())))

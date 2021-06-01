@@ -25,11 +25,12 @@ except ImportError:
 
 
 
-def AzimuthalGap(META,trlist, location):
+def AzimuthalGap(META, trlist, location):
     '''
     Return the maximun Azimuthal Gap given metadata dict, list of
     station ids and location of the epicentre.
     '''
+    trlist = list(trlist)
     (eplat,eplon) = location
     if len(trlist) < 2:
         return 359.999, []

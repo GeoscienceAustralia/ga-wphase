@@ -5,6 +5,7 @@ from builtins import str
 from builtins import range
 from builtins import object
 import os
+import logging
 import numpy as np
 from collections import defaultdict
 
@@ -24,9 +25,11 @@ except ImportError:
 
 
 from wphase.psi import seismoutils
-from wphase.psi.plotutils import plot_field, stacov
+from wphase.psi.plotutils import plot_field, stacov, make_preliminary_fit_plot
 from wphase.psi.model import OL1, OL2, OL3
 from wphase import settings
+
+logger = logging.getLogger(__name__)
 
 
 if settings.PROFILE_WPHASE:
@@ -188,6 +191,13 @@ def post_process_wpinv(
     make_maps=True,
     make_plots=True):
 
+    prelim = res.preliminary_calc_details
+
+    if prelim:
+        fname = os.path.join(working_dir, settings.WPHASE_PRELIM_FIT_PREFIX) + '.png'
+        make_preliminary_fit_plot(eqinfo, filename=fname, **prelim)
+    else:
+        logger.warning("Could not find preliminary calculation details in result.")
 
     M_OL2 = None
     WPOL = 1

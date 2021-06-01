@@ -57,6 +57,9 @@ WPHASE_RESULTS_TRACES_PREFIX = "wphase_traces"
 #: Prefix for the names of the images containing the wphase misfit info.
 WPHASE_MISFIT_PREFIX = "wphase_misfit"
 
+#: Prefix for the names of the images containing the preliminary magnitude fit
+WPHASE_PRELIM_FIT_PREFIX = "preliminary_magnitude_fit"
+
 #: Authority used for wphase.
 GA_AUTHORITY = "GA W-phase"
 

@@ -142,3 +142,40 @@ def stacov(location, lats, lons, mt=None, filename=None, fig=None):
     if filename:
         fig.savefig(filename, dpi=100, transparent=True, bbox_inches='tight')
         logger.info("Wrote %s successfully", filename)
+
+def make_preliminary_fit_plot(eqinfo,
+                              strike, average_amplitude, anisotropy,
+                              trids, corrected_amplitudes, azimuths,
+                              filename, **kwargs):
+    fig = Figure()
+    ax = fig.add_subplot(111)
+    title = 'Preliminary Magnitude Fit'
+    try:
+        title += ' for %s' % eqinfo['id']
+    except Exception:
+        pass
+    ax.set_title(title)
+    ax.set_xlabel('Azimuth (°)')
+    ax.set_ylabel('P2P Amplitude (m, corrected for attenuation)')
+    ax.set_xlim([0, 360])
+
+    degrees = azimuths * 180 / np.pi
+    for azi, amp, trid in zip(degrees, corrected_amplitudes, trids):
+        station = trid.split('.')[1]
+        #ax.annotate(station, (azi, amp))
+    ax.scatter(degrees, corrected_amplitudes, label='station amplitudes',
+               c='red', marker='^', alpha=0.3)
+
+    rule_style = dict(linestyle='--', alpha=0.2, lw=1)
+    hlabel = 'fitted P2P ampl = %.1em' % (2*average_amplitude)
+    vlabel = 'fitted strike = %.0f°' % strike
+    ax.axhline(2*average_amplitude, label=hlabel, **rule_style)
+    ax.axvline(strike % 360, label=vlabel, **rule_style)
+    ax.legend()
+
+    x = np.arange(0, 360)
+    y = 2*average_amplitude - anisotropy*np.cos(2*np.pi*(x-strike)/180)
+    ax.plot(x, y, color='blue', label='best fit')
+
+    fig.savefig(filename, dpi=100, bbox_inches='tight')
+    logger.info("Wrote %s successfully", filename)

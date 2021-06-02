@@ -109,9 +109,9 @@ BANDPASS_IMPLEMENTATION = 'scipy'
 # Strength of regularization in preliminary magnitude calculation.
 # Higher values result in less weight being given to azimuthal variation - in
 # the limit at infinity, the azimuths are completely ignored.
-# 0.1 seems to work well enough to prevent issues without completely
+# 1.0 seems to work well enough to prevent issues without completely
 # suppressing anisotropy.
-AMPLITUDE_REGULARIZATION = 0.1
+AMPLITUDE_REGULARIZATION = 1.0
 
 # Floor to clamp preliminary magnitude to
 MINIMUM_PRELIMINARY_MAGNITUDE = 6.5

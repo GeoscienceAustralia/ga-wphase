@@ -347,9 +347,13 @@ def wpinv(
 
     pre_wp_mag = pre_results['magnitude']
     t_h = pre_results['t_h']
+    logger.info("Preliminary t_h = %.2f" % t_h)
 
     logger.info("OL1:")
-    logger.info("Preliminary W-phase magnitude for the event: %.7f", pre_wp_mag)
+    logger.info("Average amplitude:  %.1em", pre_results['average_amplitude'])
+    logger.info("Magnitude:          %.2f", pre_wp_mag)
+    logger.info("Strike:             %.1f°", pre_results['strike'])
+    logger.info("Eccentricity (b/a): %.2f", pre_results['eccentricity'])
 
     output_dic['OL1'] = {}
     output_dic['OL1']['magnitude'] = round(pre_wp_mag,1)
@@ -371,6 +375,7 @@ def wpinv(
 
     # Redefine and define some values according to the pre_wp_mag
     Ta, Tb = get_corner_freqs_from_mag(pre_wp_mag)
+    logger.info("Filter corner periods: %.1f, %1f" % (Ta, Tb))
     T = np.linspace(Ta,Tb,500)
     freq = 1./T
     omega = freq*2.*np.pi
@@ -508,6 +513,7 @@ def wpinv(
     t_d = t_h = time_delays[mis_min]
     MRF = MomentRateFunction(t_h, dt)
     logger.info("Source time function, time delay: %d, %f", len(MRF), t_d)
+    logger.info("revised t_h = %.2f" % t_h)
 
     #### Removing individual bad fitting. this recursively removes stations with misfits
     # outside of the acceptable range defined by the variable misfit_tol, which was
@@ -586,7 +592,7 @@ def wpinv(
     ###Moment Tensor based on grid search  ######################
     ###for the optimal centroid's location #####################
 
-    logger.info("building latlon grid")
+    logger.info("Performing grid search for best centroid location.")
     lat_grid, lon_grid = get_latlon_for_grid(hyplat, hyplon, dist_lat=3.0,
                                              dist_lon=3.0, delta=0.8)
     logger.debug("Grid size: %d * %d", len(lon_grid), len(lat_grid))
@@ -604,6 +610,7 @@ def wpinv(
     cenlat, cenlon = latlons[misfits_latlon.argmin()]
     moments = latlon_search  #Compatibility
 
+    logger.info("Performing grid search for best depth.")
     deps_grid = get_depths_for_grid(hypdep, greens)
     logger.debug("Depth grid size: %d", len(deps_grid))
 
@@ -789,15 +796,18 @@ def preliminary_magnitude(tr_p2p, dists, azis, trids):
     # for the strike I should use.
     pre_strike = (0.5 * np.arctan2(x[2], x[1]) * 180./np.pi) % 360
 
+    b = np.sqrt(x[1]*x[1] + x[2]*x[2])
+
     return dict(
         magnitude=pre_wp_mag,
         unclamped_magnitude=unclamped,
         M0=M0,
         t_h=t_h,
         regularization=L,
-        strike=pre_strike,                         # Φ_0
-        average_amplitude=amp,                     # a - b/2
-        anisotropy=np.sqrt(x[1]*x[1] + x[2]*x[2]), # b
+        strike=pre_strike,
+        average_amplitude=amp,
+        anisotropy=b,
+        eccentricity=b/(amp+b/2),
         corrected_amplitudes=corrected_amplitudes,
         azimuths=azis,
         trids=trids,
@@ -1004,7 +1014,7 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
         trlat = trmeta['latitude']
         trlon = trmeta['longitude']
 
-        try :
+        try:
             sta  = trmeta['sta']
         except KeyError:
             sta = None
@@ -1308,12 +1318,10 @@ def ltrim(data, starttime, delta):
         return data[..., i_of:]
 
 def MT_result(M, misfit, depth, t_d):
-    logger.info("Mrr: % e", M[0])
-    logger.info("Mtt: % e", M[1])
-    logger.info("Mpp: % e", M[2])
-    logger.info("Mrt: % e", M[3])
-    logger.info("Mrp: % e", M[4])
-    logger.info("Mtp: % e", M[5])
+    logger.info("%5s % 10s % 10s % 10s", "", "r", "t", "p")
+    logger.info("%5s %+.3e %+.3e %+.3e", "r", M[0], M[3], M[4])
+    logger.info("%5s % 10s %+.3e %+.3e", "t", "", M[1], M[5])
+    logger.info("%5s % 10s % 10s %+.3e", "p", "", "", M[2])
     logger.info("misfit: %.0f%%", misfit)
     M2 = M*M
     m0 = np.sqrt(0.5 * (M2[0] + M2[1] + M2[2]) + M2[3] + M2[4] + M2[5])

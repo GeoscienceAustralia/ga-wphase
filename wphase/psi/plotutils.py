@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 '''
 Some utilities to make nice plots.
 '''
@@ -155,7 +156,7 @@ def make_preliminary_fit_plot(eqinfo,
     except Exception:
         pass
     ax.set_title(title)
-    ax.set_xlabel('Azimuth (°)')
+    ax.set_xlabel(u'Azimuth (°)')
     ax.set_ylabel('P2P Amplitude (m, corrected for attenuation)')
     ax.set_xlim([0, 360])
 

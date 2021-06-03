@@ -577,7 +577,7 @@ def wpinv(
         observed_displacements=observed_displacements,
         synthetic_displacements=syn,
         trace_lengths=OrderedDict(zip(trlist, trlen)),
-        **ol1,
+        **ol1
     )
     if OL==2:
         return ol2
@@ -651,7 +651,7 @@ def wpinv(
         time_delay=t_d,
         grid_search_candidates=inputs_latlon,
         grid_search_results=moments,
-        **ol1,
+        **ol1
     )
 
 

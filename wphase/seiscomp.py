@@ -5,6 +5,40 @@ from seiscomp3 import DataModel as DM, Core, IO
 from seiscomp3 import Logging
 from wphase.result import FMItem
 
+_charstar_is_bytes = None
+
+def charstar(string):
+    """Convert a string (unicode in python3, bytes in python2) to a char*
+    usable as an argument to the seiscomp SWIG API.
+
+    Depending on what version of seiscomp and python we're using, and whether
+    seiscomp's SWIG bindings were generated with SWIG_PYTHON_2_UNICODE or not,
+    the correct type to feed to C++ string/char* arguments can vary.
+    Unfortunately, the seiscomp3 backwards-compat python wrapper doesn't
+    compensate for this.
+
+    I couldn't find a simple way to introspect the correct python type, so the
+    first time this method is called it attempts to log a message to find out."""
+    global _charstar_is_bytes
+    if _charstar_is_bytes is None:
+        # first time we've been called - we need to detect.
+        try:
+            Logging.debug(b"Detected SWIG char* type as bytes")
+            _charstar_is_bytes = True
+        except TypeError:
+            Logging.debug(u"Detecting SWIG char* type as unicode")
+            _charstar_is_bytes = False
+    if _charstar_is_bytes:
+        if isinstance(string, bytes):
+            return string
+        else:
+            return string.encode('utf-8')
+    else:
+        if isinstance(string, bytes):
+            return string.decode('utf-8')
+        else:
+            return string
+
 def datetime_to_seiscomp(dt):
     """Convert a python UTC datetime to a seiscomp Time."""
     return Core.Time(dt.year,
@@ -49,7 +83,7 @@ def createObjects(item, agency, evid=None, with_notifiers=False, logging=Logging
     ci = DM.CreationInfo()
     ci.setCreationTime(time)
     ci.setAgencyID(agency)
-    ci.setAuthor(item.author)
+    ci.setAuthor(charstar(item.author))
 
     originTime = DM.TimeQuantity(
         datetime_to_seiscomp(item.originTime)
@@ -83,7 +117,7 @@ def createObjects(item, agency, evid=None, with_notifiers=False, logging=Logging
         mag.setMagnitude(DM.RealQuantity(item.mag))
         mag.setCreationInfo(ci)
         mag.setOriginID(derivedOrigin.publicID())
-        mag.setType(item.mag_type)
+        mag.setType(charstar(item.mag_type))
         mag.setStationCount(item.usedStationCount)
         mag.setMethodID("wphase")
     except Exception as e:

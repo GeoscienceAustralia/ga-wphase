@@ -18,7 +18,7 @@ from seiscomp3.Client import Application
 from wphase import logger, runwphase, settings
 from wphase.email import send_email
 from wphase.result import WPhaseParser, FMItem, jsonencode_np
-from wphase.seiscomp import createAndSendObjects, writeSCML
+from wphase.seiscomp import createAndSendObjects, writeSCML, charstar
 
 
 class LogRelay(logging.Handler):
@@ -26,13 +26,13 @@ class LogRelay(logging.Handler):
     def emit(self, record):
         msg = self.format(record)
         if record.levelname == 'DEBUG':
-            Logging.debug(msg)
+            Logging.debug(charstar(msg))
         elif record.levelname == 'INFO':
-            Logging.info(msg)
+            Logging.info(charstar(msg))
         elif record.levelname == 'WARNING':
-            Logging.warning(msg)
+            Logging.warning(charstar(msg))
         else:
-            Logging.error(msg)
+            Logging.error(charstar(msg))
 
 # Send W-Phase logs and python warnings to seiscomp logs
 logger.setLevel(logging.DEBUG)

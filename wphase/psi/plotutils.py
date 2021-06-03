@@ -168,8 +168,8 @@ def make_preliminary_fit_plot(eqinfo,
                c='red', marker='^', alpha=0.3)
 
     rule_style = dict(linestyle='--', alpha=0.2, lw=1)
-    hlabel = 'fitted P2P ampl = %.1em' % (2*average_amplitude)
-    vlabel = 'fitted strike = %.0f°' % strike
+    hlabel = u'fitted P2P ampl = %.1em' % (2*average_amplitude)
+    vlabel = u'fitted strike = %.0f°' % strike
     ax.axhline(2*average_amplitude, label=hlabel, **rule_style)
     ax.axvline(strike % 360, label=vlabel, **rule_style)
     ax.legend()

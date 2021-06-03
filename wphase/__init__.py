@@ -53,10 +53,8 @@ def runwphase(
         try:
             os.makedirs(output_dir)
         except OSError as e:
-            if e.errno != errno.EEXIST:
+            if e.errno != errno.EEXIST or not output_dir_can_exist:
                 raise
-            if not output_dir_can_exist:
-                raise Exception("Output directory %s already exists!" % output_dir) from e
 
     wphase_results = wphase_runner(
         output_dir,

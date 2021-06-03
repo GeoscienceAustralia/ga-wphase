@@ -30,7 +30,7 @@ else:
 
 setup(
     name = 'Wphase',
-    version = '0.2rc3',
+    version = '0.2rc4',
     packages = ['wphase', 'wphase.psi'],
     author = 'Geoscience Austraila',
     description = 'Wphase calculations and web interface.',

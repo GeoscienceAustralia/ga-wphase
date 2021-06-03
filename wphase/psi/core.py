@@ -753,10 +753,11 @@ def preliminary_magnitude(tr_p2p, dists, azis, trids,
 
     # To mitigate this, we apply regularization to penalize large values of
     # x[1] and x[2]: the cost function becomes
-    #   F(x) = |Mx - B|^2 + λ^2(x_1^2 + x_2^2),
+    #   F(x) = |Mx - B|^2 + λN(x_1^2 + x_2^2),  # N = sample count
     # which can be achieved by adding a couple rows to M and B:
 
-    M = np.concatenate((M, [[0, regularization, 0], [0, 0, regularization]]))
+    L = np.sqrt(N)*regularization
+    M = np.concatenate((M, [[0, L, 0], [0, 0, L]]))
     B = np.concatenate((B, [0, 0]))
 
     x = lstsq(M, B, rcond=None)[0]

@@ -699,7 +699,8 @@ def get_corner_freqs_from_mag(Mw):
 
 
 
-def preliminary_magnitude(tr_p2p, dists, azis, trids):
+def preliminary_magnitude(tr_p2p, dists, azis, trids,
+                          regularization=settings.AMPLITUDE_REGULARIZATION):
     '''
     Compute the preliminary magnitude.
 
@@ -755,8 +756,7 @@ def preliminary_magnitude(tr_p2p, dists, azis, trids):
     #   F(x) = |Mx - B|^2 + λ^2(x_1^2 + x_2^2),
     # which can be achieved by adding a couple rows to M and B:
 
-    L = settings.AMPLITUDE_REGULARIZATION # Regularization strength λ^2
-    M = np.concatenate((M, [[0, L, 0], [0, 0, L]]))
+    M = np.concatenate((M, [[0, regularization, 0], [0, 0, regularization]]))
     B = np.concatenate((B, [0, 0]))
 
     x = lstsq(M, B, rcond=None)[0]
@@ -803,7 +803,7 @@ def preliminary_magnitude(tr_p2p, dists, azis, trids):
         unclamped_magnitude=unclamped,
         M0=M0,
         t_h=t_h,
-        regularization=L,
+        regularization=regularization,
         strike=pre_strike,
         average_amplitude=amp,
         anisotropy=b,

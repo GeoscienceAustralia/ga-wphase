@@ -12,6 +12,7 @@ from collections import OrderedDict
 import numpy as np
 import matplotlib.colors as mcols
 from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from scipy.interpolate import griddata
 from obspy.imaging.beachball import beach
 
@@ -68,6 +69,7 @@ def plot_field(
 
     if not fig:
         fig = Figure()
+        FigureCanvas(fig)
 
     lats, lons = latlons.T
     boundaries = get_boundaries(lats, lons, xpnd = 0.7)
@@ -113,6 +115,7 @@ def stacov(location, lats, lons, mt=None, filename=None, fig=None):
     (elat, elon) = location
     if not fig:
         fig = Figure()
+        FigureCanvas(fig)
 
     proj = crs.Orthographic(central_longitude=elon, central_latitude=elat)
     coords = crs.PlateCarree()
@@ -149,6 +152,7 @@ def make_preliminary_fit_plot(eqinfo,
                               trids, corrected_amplitudes, azimuths,
                               filename, **kwargs):
     fig = Figure()
+    FigureCanvas(fig)
     ax = fig.add_subplot(111)
     title = 'Preliminary Magnitude Fit'
     try:

@@ -11,6 +11,7 @@ from collections import defaultdict
 
 # to avoid: Exception _tkinter.TclError
 import matplotlib
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
@@ -290,6 +291,7 @@ def post_process_wpinv(
 
             def save_image(self, folder, syn, obs, formats=['png']):
                 fig = matplotlib.figure.Figure(figsize=(14, 7))
+                FigureCanvas(fig)
                 ax = fig.add_subplot(1, 1, 1)
                 ax.set_title("Wphase Results (Red: Synthetic, Blue: Observed)")
                 ax.plot(syn, color="red")

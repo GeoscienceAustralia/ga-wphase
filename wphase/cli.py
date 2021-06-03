@@ -2,10 +2,11 @@
 """Runs W-Phase, sends results to seiscomp3 messaging and copies files to S3."""
 from __future__ import absolute_import, print_function
 
+import json
 import logging
 import os
 import sys
-import json
+from tempfile import NamedTemporaryFile
 
 from datetime import datetime, timedelta
 
@@ -19,14 +20,6 @@ from wphase.email import send_email
 from wphase.result import WPhaseParser, FMItem, jsonencode_np
 from wphase.seiscomp import createAndSendObjects, writeSCML
 
-
-# this is used in determining the name of the log file that this application
-# logs to. I think this must be the name of this file, but cannot be sure as the
-# logging is Gempa's black magic.
-APPLICATION_NAME = 'wphase'
-
-LOG_FILE_NAME = '{}/.seiscomp3/log/{}.log'.format(
-    os.environ['HOME'], APPLICATION_NAME)
 
 class LogRelay(logging.Handler):
     """Handler that forwards a python logger to seiscomp logs"""
@@ -51,7 +44,12 @@ logging.captureWarnings(True)
 
 class WPhase(Application):
     def __init__(self, argc, argv):
-        # Default to loglevel 1
+        # Log all messages to a file for S3
+        self._logfile_for_s3 = NamedTemporaryFile()
+        self._logger_for_s3 = Logging.FileOutput(self._logfile_for_s3.name)
+        for level in ('notice', 'error', 'warning', 'info', 'debug'):
+            self._logger_for_s3.subscribe(Logging.getGlobalChannel(level))
+
         Application.__init__(self, argc, argv)
 
         # default location to write outputs to
@@ -452,18 +450,12 @@ class WPhase(Application):
                     self.bucket_name,
                     self.evid,
                     self.resultid,
-                    [(LOG_FILE_NAME, 'sc3.log')],
+                    [(self._logfile_for_s3.name, 'sc3.log')],
                     logger.error)
             except Exception as e:
                 logger.error('failed write to S3: %s', e)
             finally:
-                # since we may do more runs, remove the log so we don't
-                # contaminate later runs with info for this run
-                try:
-                    os.remove(LOG_FILE_NAME)
-                except OSError:
-                    # ... don't log this
-                    pass
+                self._logfile_for_s3.close()
 
         if self.notificationemail:
             # must be done after writing to S3

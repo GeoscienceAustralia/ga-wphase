@@ -724,7 +724,7 @@ def preliminary_magnitude(tr_p2p, dists, azis, trids,
                  kind = 'cubic')
     corrected_amplitudes = tr_p2p / q(dists)
 
-    azis = np.array(azis) * np.pi/180. # Φ: azimuths in radians
+    azis_rad = np.array(azis) * np.pi/180. # Φ: azimuths in radians
     N = len(tr_p2p)
 
     # We set out to solve the system Mx = B in the least squares sense, where
@@ -742,8 +742,8 @@ def preliminary_magnitude(tr_p2p, dists, azis, trids,
     B = corrected_amplitudes
     M = np.zeros((N,3))
     M[:,0] = 1
-    M[:,1] = -np.cos(2*azis)
-    M[:,2] = -np.sin(2*azis)
+    M[:,1] = -np.cos(2*azis_rad)
+    M[:,2] = -np.sin(2*azis_rad)
 
     # HOWEVER, this ordinary least-squares solution is somewhat brittle: the
     # azimuthal variation of the amplitude can sometimes arrange itself such

@@ -7,7 +7,6 @@ from builtins import range
 from collections import OrderedDict
 import sys, os, glob, traceback, logging
 from concurrent.futures import ProcessPoolExecutor
-from multiprocessing import Pool
 from timeit import default_timer as timer
 import numpy as np
 from numpy.linalg import lstsq
@@ -504,7 +503,7 @@ def wpinv(
 
     # inputs for the TIME DELAY search
     inputs = [(t_d_test, GFmatrix, trlen, observed_displacements, max_t_d) for t_d_test in time_delays]
-    with ProcessPoolExecutor() as pool:
+    with ProcessPoolExecutor(max_workers=processes) as pool:
         misfits = list(pool.map(get_timedelay_misfit_wrapper,inputs))
 
     # Set t_d (time delay) and and t_h (half duration) to optimal values:
@@ -603,7 +602,7 @@ def wpinv(
                       dict(residuals=False))
                      for lat, lon in latlons]
 
-    with ProcessPoolExecutor() as pool:
+    with ProcessPoolExecutor(max_workers=processes) as pool:
         latlon_search = list(pool.map(core_inversion_wrapper, inputs_latlon))
 
     misfits_latlon = np.array([latlon_search[i][1] for i in range(len(latlons))])
@@ -619,7 +618,7 @@ def wpinv(
                dict(residuals=False))
               for depth in deps_grid]
 
-    with ProcessPoolExecutor() as pool:
+    with ProcessPoolExecutor(max_workers=processes) as pool:
         depth_search = list(pool.map(core_inversion_wrapper, inputs))
 
     misfits_depth = np.array([depth_search[i][1] for i in range(len(deps_grid))])

@@ -38,6 +38,8 @@ class FMItem(object):
         self.originTime = None
         self.centroid = False
         self.overallMisfit = None
+        self.dc = None
+        self.clvd = None
 
 class WPhaseParser(object):
     def read(self, filename=None, json_data=None):
@@ -97,6 +99,8 @@ class WPhaseParser(object):
                 getter('tmrr',    float, err=False)
                 getter('tmrp',    float, err=False)
                 getter('tmpp',    float, err=False)
+                getter('dc',      float, err=False)
+                getter('clvd',    float, err=False)
 
                 # TODO check if number_of_channels can be really mapped to used phase count
                 getter('number_of_channels', int, 'usedPhaseCount',   False, json_data["QualityParams"])

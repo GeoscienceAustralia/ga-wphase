@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import absolute_import
 from future import standard_library
 standard_library.install_aliases()
@@ -146,6 +147,15 @@ def wpinv_for_eatws(M, cenloc):
     results['tmrt'] = M[3]
     results['tmtp'] = M[5]
     results['tmtt'] = M[1]
+
+    try:
+        DC, CLVD = decomposeMT(M)
+        results['dc'] = DC
+        results['clvd'] = CLVD
+    except Exception:
+        import traceback
+        logger.warning("Error computing DC/CLVD decomposition: %s",
+                       traceback.format_exc())
 
     # from roberto's code
     M2 = M*M
@@ -443,3 +453,27 @@ def post_process_wpinv(
         results = None
 
     return results
+
+
+def decomposeMT(M):
+    """Given a deviatoric (i.e. trace-free) moment tensor (specified as a
+    6-element list in the CMT convention as usual), compute the percentage
+    double-couple and compensated linear vector dipole components.
+
+    Written following this paper:
+    Vavryčuk, V. Moment tensor decompositions revisited. J Seismol 19, 231–252
+    (2015). https://doi.org/10.1007/s10950-014-9463-y
+
+    :returns: A tuple ``(DC, CLVD)`` of relative scale factors between 0 and 1.
+    """
+    mt = MomentTensor(M, 0)
+    eigs, _ = np.linalg.eig(mt.mt)
+    M1, M2, M3 = np.sort(eigs)[::-1] # M1 >= M2 >= M3
+
+    # Since we're working with deviatoric moment tensors, we are assuming
+    # M_ISO=0 and we don't have to worry about the destinction between the
+    # Silver&Jordan and Knopoff&Randall decompositions.
+    M_CLVD = (2./3.)*(M1 + M3 - 2*M2)
+    M_DC = (1./2.)*(M1 - M3 - abs(M1 + M3 - 2*M2))
+    M = abs(M_CLVD) + abs(M_DC)
+    return abs(M_DC)/M, abs(M_CLVD)/M

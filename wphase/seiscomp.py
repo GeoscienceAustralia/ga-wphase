@@ -180,6 +180,12 @@ def createObjects(item, agency, evid=None, with_notifiers=False, logging=Logging
     mt.setDerivedOriginID(derivedOrigin.publicID())
     mt.setMethodID("wphase")
 
+    try: mt.setClvd(item.clvd)
+    except Exception: pass
+
+    try: mt.setDoubleCouple(item.dc)
+    except Exception: pass
+
     try: mt.setMomentMagnitudeID(mag.publicID())
     except Exception: pass
 

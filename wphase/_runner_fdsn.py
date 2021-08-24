@@ -16,7 +16,7 @@ from obspy.clients.fdsn import Client
 from obspy.core.inventory import Inventory
 from wphase.psi.inventory import get_waveforms, build_metadata_dict
 from wphase.psi.core import wpinv
-from wphase.psi.exceptions import PostProcessingError, InversionError
+from wphase.psi.exceptions import InversionError
 
 import wphase.settings as settings
 from wphase.wputils import OutputDict, WPInvProfiler, post_process_wpinv

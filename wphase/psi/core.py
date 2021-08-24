@@ -36,19 +36,8 @@ from wphase import settings
 from .greens import GreensFunctions
 from .bandpass import bandpassfilter
 from .model import OL1, OL2, OL3
+from .exceptions import InversionError, RTdeconvError
 logger = logging.getLogger(__name__)
-
-class InversionError(Exception):
-    """
-    A terminal condition that is not a malfunction of the software itself.
-
-    This is usually raised if there is a problem with input data.
-
-    :param str msg: The reason for termination.
-    """
-
-class RTdeconvError(Exception):
-    pass
 
 def wpinv(
     st,

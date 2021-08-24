@@ -1,1 +1,1 @@
-"""wphase.psi: Data processing and calculations."""
+"""wphase.psi: Data processing, calculations and visualization."""

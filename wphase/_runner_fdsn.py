@@ -15,7 +15,8 @@ from obspy.core.utcdatetime import UTCDateTime
 from obspy.clients.fdsn import Client
 from obspy.core.inventory import Inventory
 from wphase.psi.inventory import get_waveforms, build_metadata_dict
-from wphase.psi.core import wpinv, InversionError
+from wphase.psi.core import wpinv
+from wphase.psi.exceptions import PostProcessingError, InversionError
 
 import wphase.settings as settings
 from wphase.wputils import OutputDict, WPInvProfiler, post_process_wpinv
@@ -272,15 +273,18 @@ def runwphase(
             for message in capture.messages:
                 wphase_output.add_warning(message)
 
-            post_process_wpinv(
-                res = res,
-                wphase_output = wphase_output,
-                WPOL = processing_level,
-                working_dir = output_dir,
-                eqinfo = eqinfo,
-                metadata = meta_t_p,
-                make_maps=output_dir and make_maps,
-                make_plots=output_dir and make_plots)
+            try:
+                post_process_wpinv(
+                    res = res,
+                    wphase_output = wphase_output,
+                    WPOL = processing_level,
+                    working_dir = output_dir,
+                    eqinfo = eqinfo,
+                    metadata = meta_t_p,
+                    make_maps=output_dir and make_maps,
+                    make_plots=output_dir and make_plots)
+            except Exception as e:
+                wphase_output.add_warning("Error during post-processing: %s" % e)
 
     except InversionError as e:
         wphase_output.add_warning(str(e))

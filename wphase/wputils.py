@@ -441,13 +441,5 @@ def post_process_wpinv(
                        filename=gridSearchPrefix)
     else:
         results = None
-    # Event
-    wphase_output['Event'] = {}
-    wphase_output['Event']['depth'] = round(eqinfo['dep'],1)
-    wphase_output['Event']['latitude'] = round(eqinfo['lat'],3)
-    wphase_output['Event']['longitude'] = round(eqinfo['lon'],3)
-    wphase_output['Event']['time'] = str(eqinfo['time']).replace("T"," ").replace("Z","") #2016-01-18T18:24:16.770000Z -> 2016-01-18 18:24:16.770000
-    if 'id' in eqinfo:
-        wphase_output['Event']['id'] = eqinfo['id']
 
     return results

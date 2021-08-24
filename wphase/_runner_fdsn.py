@@ -270,8 +270,20 @@ def runwphase(
                     processes = n_workers_in_pool,
                     OL = processing_level,
                     output_dic = wphase_output)
+
             for message in capture.messages:
                 wphase_output.add_warning(message)
+
+            # Add triggering event parameters to output dict:
+            wphase_output['Event'] = {}
+            wphase_output['Event']['depth'] = round(eqinfo['dep'],1)
+            wphase_output['Event']['latitude'] = round(eqinfo['lat'],3)
+            wphase_output['Event']['longitude'] = round(eqinfo['lon'],3)
+            # 2016-01-18T18:24:16.770000Z -> 2016-01-18 18:24:16.770000
+            wphase_output['Event']['time'] = \
+                str(eqinfo['time']).replace("T"," ").replace("Z","")
+            if 'id' in eqinfo:
+                wphase_output['Event']['id'] = eqinfo['id']
 
             try:
                 post_process_wpinv(

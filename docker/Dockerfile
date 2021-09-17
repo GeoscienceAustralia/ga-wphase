@@ -45,9 +45,10 @@ WORKDIR /home/wphase
 COPY requirements.txt ./requirements.txt
 RUN pip3 install --user --no-cache-dir --no-deps -r requirements.txt
 
-# Install seiscomp 4.5:
-ARG SEISCOMP_TARBALL_URL=https://www.seiscomp.de/downloader/seiscomp-4.5.0-ubuntu20.04-x86_64.tar.gz
-RUN cd /opt/ && curl -s $SEISCOMP_TARBALL_URL | tar xfz -
+# Install seiscomp 4.6.
+# The official seiscomp.de download service is often very slow for me, so I've rehosted the tarball on github.
+ARG SEISCOMP_TARBALL_URL=https://github.com/GeoscienceAustralia/ga-wphase/releases/download/v0.1/seiscomp-4.6.0-ubuntu20.04-x86_64.tar.gz
+RUN cd /opt/ && curl -LSsf $SEISCOMP_TARBALL_URL | tar xfz -
 
 # Configure environment for seiscomp:
 ENV SEISCOMP_ROOT="/opt/seiscomp" \

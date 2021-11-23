@@ -43,6 +43,8 @@ N_TRACES_PER_RESULT_PLOT = os.environ.get('WPHASE_N_TRACES_PER_RESULT_PLOT', 6)
 #: Implementation of bandpass filter to use
 BANDPASS_IMPLEMENTATION = os.environ.get('WPHASE_BANDPASS_IMPLEMENTATION', 'scipy')
 
+### Model parameters
+
 # Strength of regularization in preliminary magnitude calculation.
 # Higher values result in less weight being given to azimuthal variation - in
 # the limit at infinity, the azimuths are completely ignored.
@@ -53,6 +55,36 @@ AMPLITUDE_REGULARIZATION = float(os.environ.get('WPHASE_AMPLITUDE_REGULARIZATION
 # Floor to clamp preliminary magnitude to
 MINIMUM_PRELIMINARY_MAGNITUDE = float(os.environ.get('WPHASE_MINIMUM_PRELIMINARY_MAGNITUDE', 6.5))
 
+# used to reject a channel if the fitting of the instrument response is
+# greater than this.  see "Source inversion of W phase - speeding up
+# seismic tsunami warning - Kanamori - 2008" in the doc folder of
+# atws_wphase for details on the fitting of the instrument response.
+RESPONSE_MISFIT_TOL = 5. # Percent
+
+# time cutoff, seconds/degree from t_p for the Wphase window.
+WPHASE_CUTOFF = 15
+
+# traces with peak-to-peak amplitude outside of the range
+# [median_rejection_coeff[0] * m, median_rejection_coeff[1] * m], where m
+# is the median peak-to-peak amplitude over all stations, will be rejected
+MEDIAN_REJECTION_COEFF = [0.1, 3]
+
+# Minimum number of stations required to begin the inversion.
+MINIMUM_STATIONS = 4
+
+# Maximum time delay t_d in seconds. We'll search for the optimal t_d up to
+# this value.
+MAXIMUM_TIME_DELAY = 200.
+
+# Channels where the misfits (100*sqrt(sum(synthetic-observed)^2 /
+# sum(synthetic)^2)) are greater than the first element of this sequence  will
+# be rejected. If any stations remain, then those with misfits greater than the
+# second element will be rejected, and so on.
+MISFIT_TOL_SEQUENCE = [300, 200, 100]
+
+# Minimum number of well-fitting channels required for inversion to pass
+# quality check
+MINIMUM_FITTING_CHANNELS = 10
 
 ### Filenames of output products:
 
@@ -110,4 +142,3 @@ MISFIT_KEY = 'Misfits'
 
 #: Key containing the host name.
 HOST_NAME_KEY = 'HostName'
-

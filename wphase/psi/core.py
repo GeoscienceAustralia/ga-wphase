@@ -119,42 +119,6 @@ def wpinv(
     if output_dic is None:
         output_dic = {}
 
-    # used to reject a channel if the fitting of the instrument response is
-    # greater than this.  see "Source inversion of W phase - speeding up
-    # seismic tsunami warning - Kanamori - 2008" in the doc folder of
-    # atws_wphase for details on the fitting of the instrument response.
-    response_misfit_tol = 5. #Percent
-
-    # time cutoff, seconds/degree from t_p for the Wphase window.
-    wphase_cutoff = 15
-
-    # traces with peak-to-peak amplitude outside of the range
-    # [median_rejection_coeff[0] * m, median_rejection_coeff[1] * m], where m
-    # is the median peak-to-peak amplitude over all stations, will be rejected
-    median_rejection_coeff = [0.1, 3]
-
-    # Minimum number of stations required to trigger the inversion.
-    N_st_min = 4
-
-    # Maximum time delay in seconds. We'll search for the optimal t_d up to
-    # this value.
-    max_t_d = 200.
-
-    # stations where the misfits (100*sqrt(sum(synthetic-observed)^2 /
-    # sum(synthetic)^2)) are greater than misfit_tol[0] will be rejected. If
-    # any stations remain, then those with misfits greater than misfit_tol[1]
-    # will be rejected, and so on.
-    misfit_tol = [300, 200, 100]#, 80, 60, 50]# 40, 30]
-
-    # Number of points in which the finer search will be performed in OL3. That
-    # is the Nfinersearch lat/lons with the lowest misfits will have a finer
-    # scale search done in their neighbourhoods. This comes from earlier
-    # versions of the code and may not work at present.
-    Nfinersearch = 0
-
-    # After removing bad traces need this # of channels to continue
-    minium_num_channels = 10
-
     #############Output Level 1#############################
     #############Preliminary magnitude:#####################
 
@@ -241,7 +205,7 @@ def wpinv(
 
         # Wphase (UTC) time window
         t1 = orig + t_p
-        t2 = t1 + dist*wphase_cutoff
+        t2 = t1 + dist*settings.WPHASE_CUTOFF
 
         # accounting for the units of the transfer function in the instrument response... see README.
         if trmeta['transfer_function'] == "B":
@@ -269,7 +233,7 @@ def wpinv(
         misfit = 100*np.linalg.norm(AmpfromPAZ-AmpfromCOEFF) \
                 / np.linalg.norm(AmpfromPAZ)
 
-        if misfit > response_misfit_tol:
+        if misfit > settings.RESPONSE_MISFIT_TOL:
             logger.warning('Bad fitting for response (misfit=%e). Skipping %s', misfit, tr.id)
             continue
 
@@ -315,12 +279,13 @@ def wpinv(
 
     # Median rejection
     median_p2p = np.median(tr_p2p)
+    mrcoeff = settings.MEDIAN_REJECTION_COEFF
     accepted_traces = [i for i in range(len(tr_p2p))
-                         if tr_p2p[i] < median_rejection_coeff[1]*median_p2p
-                         and tr_p2p[i] > median_rejection_coeff[0]*median_p2p]
+                         if tr_p2p[i] < mrcoeff[1]*median_p2p
+                         and tr_p2p[i] > mrcoeff[0]*median_p2p]
     if not EnoughAzimuthalCoverage():
         raise InversionError("Lack of azimuthal coverage. Aborting.")
-    if len(accepted_traces) < N_st_min:
+    if len(accepted_traces) < settings.MINIMUM_STATIONS:
         raise InversionError("Lack of stations. Aborting.")
 
     logger.info("Traces accepted for preliminary magnitude calculation: {}"
@@ -392,7 +357,7 @@ def wpinv(
 
         # W-phase time window
         t1 = orig + t_p
-        t2 = t1 + dist*wphase_cutoff
+        t2 = t1 + dist*settings.WPHASE_CUTOFF
         tr = st_sel.select(id = trid)[0]
 
         tr.data = np.array(tr.data, dtype=float)
@@ -450,10 +415,11 @@ def wpinv(
     trlen = [] # A list with the length of each station data.
     trlist2 = trlist[:]
 
+    mrcoeff = settings.MEDIAN_REJECTION_COEFF
     median_AMP = np.median(tr_p2p)
     for i, amp in enumerate(tr_p2p):
-        if (amp > median_AMP*median_rejection_coeff[1]
-        or amp < median_AMP*median_rejection_coeff[0]):
+        if (amp > median_AMP*mrcoeff[1]
+        or amp < median_AMP*mrcoeff[0]):
             trlist2.remove(trlist[i])
 
         else:
@@ -470,7 +436,7 @@ def wpinv(
 
     # time delays for which we will run inversions (finally choosing the one with
     # lowest misfit)
-    time_delays = np.arange(1., max_t_d)
+    time_delays = np.arange(1., settings.MAXIMUM_TIME_DELAY)
 
     # extract the greens function matrix for all time delays. Note that this does not
     # perform an inversion, because OnlyGetFullGF=True.
@@ -487,11 +453,11 @@ def wpinv(
         trlist,
         gfdir=gfdir,
         OnlyGetFullGF=True,
-        Max_t_d=max_t_d,
+        Max_t_d=settings.MAXIMUM_TIME_DELAY,
     )
 
     # inputs for the TIME DELAY search
-    inputs = [(t_d_test, GFmatrix, trlen, observed_displacements, max_t_d) for t_d_test in time_delays]
+    inputs = [(t_d_test, GFmatrix, trlen, observed_displacements, settings.MAXIMUM_TIME_DELAY) for t_d_test in time_delays]
     with ProcessPoolExecutor(max_workers=processes) as pool:
         misfits = list(pool.map(get_timedelay_misfit_wrapper,inputs))
 
@@ -504,8 +470,7 @@ def wpinv(
     logger.info("revised t_h = %.2f" % t_h)
 
     #### Removing individual bad fitting. this recursively removes stations with misfits
-    # outside of the acceptable range defined by the variable misfit_tol, which was
-    # described above.
+    # outside of the acceptable range defined by the setting MISFIT_TOL_SEQUENCE.
     M, misfit, GFmatrix = core_inversion(
         t_h,
         t_d,
@@ -521,7 +486,7 @@ def wpinv(
         GFs=True)
 
     # Remove bad traces
-    for tol in misfit_tol:
+    for tol in settings.MISFIT_TOL_SEQUENCE:
         # Make sure there are enough channels
         GFmatrix, observed_displacements, trlist, trlen = remove_individual_traces(
             tol,
@@ -531,7 +496,7 @@ def wpinv(
             trlist,
             trlen)
 
-        if len(trlist) < minium_num_channels:
+        if len(trlist) < settings.MINIMUM_FITTING_CHANNELS:
             output_dic.pop('OL1', None)
             msg = "Only {} channels with possibly acceptable fits. Aborting.".format(len(trlist))
             logger.error(msg)

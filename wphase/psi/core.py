@@ -52,7 +52,7 @@ def wpinv(
     details of the the algorithm and logic, see `here
     <https://pubs.er.usgs.gov/publication/70045140>`_.
 
-    :param st: containing the raw data.
+    :param st: The waveform data to be used as raw input
     :type st: :py:class:`obspy.core.stream.Stream`
 
     :param dict metadata: Station metadata. Each key is a station ID and
@@ -153,6 +153,7 @@ def wpinv(
     st_sel = st.select(location = '00')
     st_sel+= st.select(location = '--')
     st_sel+= st.select(location = '') #Check this.
+
     #st_sel = st_sel.select(component = 'Z')
     #We also want to select stations with one location code which is not the
     #default (see above).
@@ -316,6 +317,7 @@ def wpinv(
     ol1 = OL1(
         preliminary_magnitude=pre_wp_mag,
         preliminary_calc_details=pre_results,
+        used_traces=trlist,
     )
     if OL==1:
         return ol1
@@ -421,6 +423,13 @@ def wpinv(
         if (amp > median_AMP*mrcoeff[1]
         or amp < median_AMP*mrcoeff[0]):
             trlist2.remove(trlist[i])
+            logger.warning("%s: Amplitude is %.2fx the median, which is "
+                           "outside our acceptable range of [%.2f, %.2f]. "
+                           "Rejecting this trace.",
+                           trlist[i],
+                           amp/median_AMP,
+                           mrcoeff[0],
+                           mrcoeff[1])
 
         else:
             tr = st_sel.select(id = trlist[i])[0]
@@ -523,14 +532,18 @@ def wpinv(
 
     logger.info("OL2:")
 
-    output_dic['OL2'] = MT_result(M, misfit, hypdep, t_d)
+    trace_lengths = list(zip(trlist, trlen))
+    output_dic['OL2'] = MT_result(M, misfit, hypdep, t_d,
+                                  trace_lengths=dict(trace_lengths))
 
     ol2 = OL2(
+        preliminary_magnitude=pre_wp_mag,
+        preliminary_calc_details=pre_results,
+        used_traces=trlist,
         moment_tensor=M,
         observed_displacements=observed_displacements,
         synthetic_displacements=syn,
-        trace_lengths=OrderedDict(zip(trlist, trlen)),
-        **ol1
+        trace_lengths=OrderedDict(trace_lengths),
     )
     if OL==2:
         return ol2
@@ -591,20 +604,25 @@ def wpinv(
           + M[5]*GFmatrix[:,4])
 
 
+    trace_lengths = list(zip(trlist, trlen))
+
     logger.info("OL3:")
-    output_dic['OL3'] = MT_result(M, misfit, cendep, t_d)
+    output_dic['OL3'] = MT_result(M, misfit, cendep, t_d,
+                                  trace_lengths=dict(trace_lengths))
 
     cenloc = (cenlat,cenlon,cendep)
     return OL3(
+        preliminary_magnitude=pre_wp_mag,
+        preliminary_calc_details=pre_results,
+        used_traces=trlist,
         moment_tensor=M,
         observed_displacements=observed_displacements,
         synthetic_displacements=syn,
-        trace_lengths=OrderedDict(zip(trlist, trlen)),
+        trace_lengths=OrderedDict(trace_lengths),
         centroid=cenloc,
         time_delay=t_d,
         grid_search_candidates=inputs_latlon,
         grid_search_results=moments,
-        **ol1
     )
 
 
@@ -1271,11 +1289,11 @@ def ltrim(data, starttime, delta):
     else:
         return data[..., i_of:]
 
-def MT_result(M, misfit, depth, t_d):
-    logger.info("%5s % 10s % 10s % 10s", "", "r", "t", "p")
+def MT_result(M, misfit, depth, t_d, **extra):
+    logger.info("%5s % 10s % 10s % 10s", "",  "r",  "t",  "p")
     logger.info("%5s %+.3e %+.3e %+.3e", "r", M[0], M[3], M[4])
-    logger.info("%5s % 10s %+.3e %+.3e", "t", "", M[1], M[5])
-    logger.info("%5s % 10s % 10s %+.3e", "p", "", "", M[2])
+    logger.info("%5s % 10s %+.3e %+.3e", "t", "",   M[1], M[5])
+    logger.info("%5s % 10s % 10s %+.3e", "p", "",   "",   M[2])
     logger.info("misfit: %.0f%%", misfit)
     M2 = M*M
     m0 = np.sqrt(0.5 * (M2[0] + M2[1] + M2[2]) + M2[3] + M2[4] + M2[5])
@@ -1294,4 +1312,5 @@ def MT_result(M, misfit, depth, t_d):
         'magnitude': round(mag, 1),
         'depth': depth,
         'time_delay': t_d,
+        **extra
     }

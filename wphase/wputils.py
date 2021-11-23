@@ -284,7 +284,7 @@ def post_process_wpinv(
         except Exception:
             wphase_output.add_warning("Failed to create station distribtuion plot.")
 
-    if WPOL >= 2 and make_plots and len(traces):
+    if WPOL >= 2 and make_plots and len(traces) > 0:
         # Secondly the wphase traces plot, syn Vs obs
         class PlotContext(object):
             """
@@ -405,7 +405,7 @@ def post_process_wpinv(
             len(traces))
 
     elif make_plots:
-        wphase_output.add_warning('Could not create wphase results plot.')
+        wphase_output.add_warning('Could not create wphase results plot. OL=%d, len(traces)=%d' % (WPOL, len(traces)))
 
     if WPOL==3:
         results = wpinv_for_eatws(M, cenloc)

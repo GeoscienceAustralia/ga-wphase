@@ -23,6 +23,7 @@ class Data(Mapping):
 class OL1(Data):
     preliminary_magnitude    = None # type: float
     preliminary_calc_details = None # type: dict
+    used_traces              = None # type: list[str]
 
 class OL2(OL1):
     moment_tensor            = None # type: np.array

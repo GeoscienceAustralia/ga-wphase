@@ -2,9 +2,6 @@
 from __future__ import absolute_import
 from future import standard_library
 standard_library.install_aliases()
-from builtins import str
-from builtins import range
-from builtins import object
 import os
 import logging
 import numpy as np
@@ -12,7 +9,6 @@ from collections import defaultdict
 
 # to avoid: Exception _tkinter.TclError
 import matplotlib
-from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
@@ -27,7 +23,7 @@ except ImportError:
 
 
 from wphase.psi import seismoutils
-from wphase.psi.plotutils import plot_field, stacov, make_preliminary_fit_plot
+from wphase.plotting import plot_grid_search, plot_station_coverage, plot_preliminary_fit, plot_waveforms
 from wphase.psi.model import OL1, OL2, OL3
 from wphase import settings
 
@@ -206,7 +202,7 @@ def post_process_wpinv(
 
     if prelim:
         fname = os.path.join(working_dir, settings.WPHASE_PRELIM_FIT_PREFIX) + '.png'
-        make_preliminary_fit_plot(eqinfo, filename=fname, **prelim)
+        plot_preliminary_fit(eqinfo, filename=fname, **prelim)
     else:
         logger.warning("Could not find preliminary calculation details in result.")
 
@@ -275,7 +271,7 @@ def post_process_wpinv(
             stationDistPrefix = os.path.join(
                 working_dir,
                 settings.WPHASE_STATION_DISTRIBUTION_PREFIX)
-            stacov(
+            plot_station_coverage(
                 (hyplat,hyplon),
                 lats,
                 lons,
@@ -286,118 +282,7 @@ def post_process_wpinv(
 
     if WPOL >= 2 and make_plots and len(traces) > 0:
         # Secondly the wphase traces plot, syn Vs obs
-        class PlotContext(object):
-            """
-            Handle a single plot.
-            """
-            def __init__(self, name):
-                self.name = name
-                self.xticks = []
-                self.xlabel = []
-
-            def add_tick(self, tick_pos, label):
-                self.xticks.append(tick_pos)
-                self.xlabel.append(label)
-
-            def save_image(self, folder, syn, obs, formats=['png']):
-                fig = matplotlib.figure.Figure(figsize=(14, 7))
-                FigureCanvas(fig)
-                ax = fig.add_subplot(1, 1, 1)
-                ax.set_title("Wphase Results (Red: Synthetic, Blue: Observed)")
-                ax.plot(syn, color="red")
-                ax.plot(obs, color="blue")
-                ax.set_xticks(self.xticks)
-                ax.set_xticklabels(self.xlabel, rotation=90, fontsize='xx-small')
-                ax.set_xlim((0, len(obs)))
-                for offset in self.xticks:
-                    ax.axvline(offset, color='0.1')
-                for fmt in formats:
-                    fig.savefig(
-                        os.path.join(folder, '{}.{}'.format(self.name, fmt)),
-                        dpi=120,
-                        format=fmt,
-                        bbox_inches='tight')
-
-        class CreatePlots(object):
-            """
-            Generate the wphase result plots.
-
-            This is achieved by constructing an instance of this class.
-
-            :param folder: The folder to write the plots to.
-            :param prefix: Prefix for file names.
-            :param syn: The synthetic data (for all stations).
-            :param obs: The observed data (for all stations).
-            :param n_traces: The number of traces (i.e. stations).
-
-            .. note:: This uses *traces* which is
-                currently defined in the enclosing scope.
-            """
-            def __init__(self, folder, prefix, syn, obs, n_traces):
-                self.folder = folder
-                self.prefix = prefix
-                self.syn = syn
-                self.obs = obs
-                self.n_traces = n_traces
-                self.all_traces = PlotContext(prefix)
-                self.images = []
-                self.images.append(((1, n_traces), prefix + '.png'))
-                self.n_traces_in_curr = 0
-                if n_traces > settings.N_TRACES_PER_RESULT_PLOT:
-                    self.n_subplots_done = 0
-                    self.start_next_plot(0)
-                else:
-                    self.curr_sub_plot = None
-
-                # generate the plots
-                offset = 0
-                for trid, trlen in traces.items():
-                    offset += trlen
-                    self.add_tick(offset, trid.split('.')[1])
-
-            def add_tick(self, tick_pos, label):
-                """
-                Add a tick (which corresponds to a station).
-                """
-                self.all_traces.add_tick(tick_pos, label)
-                if self.curr_sub_plot is not None:
-                    self.n_traces_in_curr += 1
-                    self.curr_sub_plot.add_tick(tick_pos - self.start_index, label)
-                    if self.n_traces_in_curr == settings.N_TRACES_PER_RESULT_PLOT:
-                        self.save_curr_subplot(tick_pos)
-                        self.start_next_plot(tick_pos)
-
-            def save_curr_subplot(self, end_index):
-                """
-                Save the plot for a subset of traces.
-                """
-                slc = slice(self.start_index, end_index)
-                self.curr_sub_plot.save_image(self.folder, self.syn[slc], self.obs[slc])
-                self.images.append((self.next_plot_range, self.curr_sub_plot.name + '.png'))
-                self.n_subplots_done += 1
-
-            def start_next_plot(self, end_index):
-                """
-                Start a plot for the next subset of traces.
-                """
-                self.n_traces_in_curr = 0
-                self.start_index = end_index
-                first = self.n_subplots_done * settings.N_TRACES_PER_RESULT_PLOT + 1
-                last = (self.n_subplots_done + 1) * settings.N_TRACES_PER_RESULT_PLOT
-                last = min(last, self.n_traces)
-                self.next_plot_range = (first, last)#'{} to {}'.format(first, last)
-                self.curr_sub_plot = PlotContext('{}_{}_{}'.format(self.prefix, first, last))
-
-            def __del__(self):
-                """
-                Save the plots of all traces and the last set of traces.
-                """
-                self.all_traces.save_image(self.folder, self.syn, self.obs, ['png'])
-                if self.curr_sub_plot is not None and self.n_traces_in_curr:
-                    self.save_curr_subplot(len(self.syn))
-                wphase_output[settings.RESULTS_PLOTS_KEY] = self.images
-
-        CreatePlots(
+        plot_waveforms(
             working_dir,
             settings.WPHASE_RESULTS_TRACES_PREFIX,
             syn,
@@ -441,14 +326,16 @@ def post_process_wpinv(
             scaled_field = misfits_depth_mat/misfits_depth_mat.min()
 
             gridSearchPrefix = os.path.join(working_dir, settings.WPHASE_GRID_SEARCH_PREFIX)
-            plot_field((eqinfo['lon'], eqinfo['lat']),
-                       (cenloc[1], cenloc[0]),
-                       latlon_depth_grid,
-                       scaled_field,
-                       s=100./scaled_field**2,
-                       c=scaled_field,
-                       zorder=999,
-                       filename=gridSearchPrefix)
+            plot_grid_search(
+                (eqinfo['lon'], eqinfo['lat']),
+                (cenloc[1], cenloc[0]),
+                latlon_depth_grid,
+                scaled_field,
+                s=100./scaled_field**2,
+                c=scaled_field,
+                zorder=999,
+                filename=gridSearchPrefix
+            )
     else:
         results = None
 

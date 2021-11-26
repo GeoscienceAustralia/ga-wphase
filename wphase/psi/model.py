@@ -34,5 +34,9 @@ class OL2(OL1):
 class OL3(OL2):
     centroid                 = None # type: tuple[float, float, float]
     time_delay               = None # type: float
-    grid_search_candidates   = None # type: list
+    grid_search_candidates   = None # type: list[tuple[float, float]]
+    """List of inputs to core_inversion that were used in the grid search.
+    Elements are (lat, lon, depths) tuples."""
     grid_search_results      = None # type: list[tuple[np.array, float]]
+    """List of outputs from the inversion for each point in the grid search.
+    elements are (MT, misfit) tuples."""

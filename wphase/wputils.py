@@ -6,6 +6,7 @@ import os
 import logging
 import numpy as np
 from collections import defaultdict
+from traceback import format_exc
 
 # to avoid: Exception _tkinter.TclError
 import matplotlib
@@ -208,6 +209,18 @@ def post_process_wpinv(
 
     M_OL2 = None
     WPOL = 1
+    traces = res.used_traces
+
+    if WPOL >= 2:
+        wphase_output['QualityParams']['azimuthal_gap'] = seismoutils.AzimuthalGap(
+                metadata,
+                traces,
+                (eqinfo['lat'], eqinfo['lon']))[0]
+        wphase_output['QualityParams']['number_of_stations'] = len(set(
+            trid.split('.')[1] for trid in traces))
+        wphase_output['QualityParams']['number_of_channels'] = len(traces)
+
+
     # extract the results to local variables
     if isinstance(res, OL2):
         WPOL = 2
@@ -222,8 +235,15 @@ def post_process_wpinv(
         WPOL = 3
         M_OL2 = wphase_output['OL2'].pop('M')
         cenloc = res.centroid
-        inputs_latlon = res.grid_search_candidates
-        moments = res.grid_search_results
+
+        results = wpinv_for_eatws(M, cenloc)
+        wphase_output['MomentTensor'] = results
+
+        # Only 3 has cenloc...
+        wphase_output['Centroid'] = {}
+        wphase_output['Centroid']['depth'] = round(cenloc[2],1)
+        wphase_output['Centroid']['latitude'] = round(cenloc[0],3)
+        wphase_output['Centroid']['longitude'] = round(cenloc[1],3)
 
         if make_plots:
             try:
@@ -239,27 +259,6 @@ def post_process_wpinv(
 
     if 'OL2' in wphase_output:
         wphase_output['OL2'].pop('M', None)
-
-    if WPOL >= 2:
-        wphase_output['QualityParams']['azimuthal_gap'] = seismoutils.AzimuthalGap(
-                metadata,
-                traces,
-                (eqinfo['lat'], eqinfo['lon']))[0]
-        wphase_output['QualityParams']['number_of_stations'] = len(set(
-            trid.split('.')[1] for trid in traces))
-        wphase_output['QualityParams']['number_of_channels'] = len(traces)
-
-    if make_plots:
-        try:
-            # Display the beachball for the output level achieved
-            beachBallPrefix = os.path.join(working_dir, "{}_OL{}".format(
-                settings.WPHASE_BEACHBALL_PREFIX, WPOL))
-            plot_beachball(M, width=400,
-                outfile = beachBallPrefix + ".png", format='png')
-            plt.close('all') # obspy doesn't clean up after itself...
-        except Exception:
-            wphase_output.add_warning("Failed to create beachball for OL{}.".format(
-                WPOL))
 
     if make_maps:
         try:
@@ -278,7 +277,20 @@ def post_process_wpinv(
                 mt=M,
                 filename=stationDistPrefix + '.png')
         except Exception:
-            wphase_output.add_warning("Failed to create station distribtuion plot.")
+            wphase_output.add_warning("Failed to create station distribution plot. {}".format(format_exc()))
+
+
+    if make_plots:
+        try:
+            # Display the beachball for the output level achieved
+            beachBallPrefix = os.path.join(working_dir, "{}_OL{}".format(
+                settings.WPHASE_BEACHBALL_PREFIX, WPOL))
+            plot_beachball(M, width=400,
+                outfile = beachBallPrefix + ".png", format='png')
+            plt.close('all') # obspy doesn't clean up after itself...
+        except Exception:
+            wphase_output.add_warning("Failed to create beachball for OL{}. {}".format(
+                WPOL, format_exc()))
 
     if WPOL >= 2 and make_plots and len(traces) > 0:
         # Secondly the wphase traces plot, syn Vs obs
@@ -287,28 +299,18 @@ def post_process_wpinv(
             settings.WPHASE_RESULTS_TRACES_PREFIX,
             syn,
             obs,
-            len(traces))
+            res.trace_lengths)
 
     elif make_plots:
         wphase_output.add_warning('Could not create wphase results plot. OL=%d, len(traces)=%d' % (WPOL, len(traces)))
 
     if WPOL==3:
-        results = wpinv_for_eatws(M, cenloc)
-        wphase_output['MomentTensor'] = results
-
-        # Only 3 has cenloc...
-        wphase_output['Centroid'] = {}
-        wphase_output['Centroid']['depth'] = round(cenloc[2],1)
-        wphase_output['Centroid']['latitude'] = round(cenloc[0],3)
-        wphase_output['Centroid']['longitude'] = round(cenloc[1],3)
-
         if make_maps:
             # draw the grid search plot
-            inputs = inputs_latlon
-            N_grid = len(inputs)
-            misfits = np.array([moments[i_grid][1] for i_grid in range(N_grid)])
-            coords = np.array([inputs[i_grid][2] for i_grid in range(N_grid)])
-            lats, lons, depths = coords[:,:].T
+            coords = np.asarray(res.grid_search_candidates)
+            misfits = np.array([x[1] for x in res.grid_search_results])
+            N_grid = len(misfits)
+            lats, lons, depths = coords.T
             depths_unique  = sorted(set(depths))
             N_depths = len(depths_unique)
             misfits_depth_mat = np.zeros((int(N_grid/N_depths),N_depths))
@@ -336,10 +338,6 @@ def post_process_wpinv(
                 zorder=999,
                 filename=gridSearchPrefix
             )
-    else:
-        results = None
-
-    return results
 
 
 def decomposeMT(M):

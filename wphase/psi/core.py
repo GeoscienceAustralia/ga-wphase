@@ -450,10 +450,8 @@ def wpinv(
     # extract the greens function matrix for all time delays. Note that this does not
     # perform an inversion, because OnlyGetFullGF=True.
     GFmatrix = core_inversion(
-        t_h,
         0,
         (hyplat, hyplon, hypdep),
-        orig,
         (Ta, Tb),
         MRF,
         observed_displacements,
@@ -462,7 +460,7 @@ def wpinv(
         trlist,
         gfdir=gfdir,
         OnlyGetFullGF=True,
-        Max_t_d=settings.MAXIMUM_TIME_DELAY,
+        max_t_d=settings.MAXIMUM_TIME_DELAY,
     )
 
     # inputs for the TIME DELAY search
@@ -481,10 +479,8 @@ def wpinv(
     #### Removing individual bad fitting. this recursively removes stations with misfits
     # outside of the acceptable range defined by the setting MISFIT_TOL_SEQUENCE.
     M, misfit, GFmatrix = core_inversion(
-        t_h,
         t_d,
         (hyplat, hyplon, hypdep),
-        orig,
         (Ta, Tb),
         MRF,
         observed_displacements,
@@ -492,7 +488,7 @@ def wpinv(
         metadata,
         trlist,
         gfdir=gfdir,
-        GFs=True)
+        return_gfs=True)
 
     # Remove bad traces
     for tol in settings.MISFIT_TOL_SEQUENCE:
@@ -512,10 +508,8 @@ def wpinv(
             raise InversionError(msg)
 
         M, misfit, GFmatrix = core_inversion(
-            t_h,
             t_d,
             (hyplat, hyplon, hypdep),
-            orig,
             (Ta,Tb),
             MRF,
             observed_displacements,
@@ -523,7 +517,7 @@ def wpinv(
             metadata,
             trlist,
             gfdir=gfdir,
-            GFs=True
+            return_gfs=True
         )
 
     syn = (M[0]*GFmatrix[:,0] + M[1]*GFmatrix[:,1] +
@@ -564,40 +558,43 @@ def wpinv(
     logger.debug("Grid size: %d * %d", len(lon_grid), len(lat_grid))
     latlons = [(lat, lon) for lat in lat_grid for lon in lon_grid]
 
-    inputs_latlon = [(t_h, t_d, (lat, lon, hypdep), orig, (Ta, Tb), MRF,
-                      observed_displacements, trlen, metadata, trlist, greens,
-                      dict(residuals=False))
-                     for lat, lon in latlons]
+    grid_search_inputs = [
+        (t_d, (lat, lon, hypdep), (Ta, Tb), MRF,
+         observed_displacements, trlen, metadata, trlist, greens)
+        for lat, lon in latlons
+    ]
 
-    with ProcessPoolExecutor(max_workers=processes) as pool:
-        latlon_search = list(pool.map(core_inversion_wrapper, inputs_latlon))
-
-    misfits_latlon = np.array([latlon_search[i][1] for i in range(len(latlons))])
-    cenlat, cenlon = latlons[misfits_latlon.argmin()]
-    moments = latlon_search  #Compatibility
+    i_grid, _, _, grid_search_results = minimize_misfit(
+        grid_search_inputs,
+        processes=processes
+    )
+    cenlat, cenlon = latlons[i_grid]
 
     logger.info("Performing grid search for best depth.")
     deps_grid = get_depths_for_grid(hypdep, greens)
     logger.debug("Depth grid size: %d", len(deps_grid))
 
-    inputs = [(t_h, t_d, (cenlat, cenlon, depth), orig, (Ta,Tb),
-               MRF, observed_displacements, trlen, metadata, trlist, greens,
-               dict(residuals=False))
-              for depth in deps_grid]
+    depth_search_inputs = [
+        (t_d, (cenlat, cenlon, depth), (Ta,Tb),
+         MRF, observed_displacements, trlen, metadata, trlist, greens)
+        for depth in deps_grid
+    ]
 
-    with ProcessPoolExecutor(max_workers=processes) as pool:
-        depth_search = list(pool.map(core_inversion_wrapper, inputs))
+    i_dep, _, _, _ = minimize_misfit(
+        depth_search_inputs,
+        processes=processes
+    )
+    cendep = deps_grid[i_dep]
 
-    misfits_depth = np.array([depth_search[i][1] for i in range(len(deps_grid))])
-    cendep = deps_grid[misfits_depth.argmin()]
+    ### Final inversion!!
+    # While we already inverted at this centroid location during the depth
+    # search, we threw away the corresponding synthetic waveforms; so we need
+    # to re-run the inversion to get them.
 
-
-    ###Final inversion!!
-
-    M, misfit, GFmatrix = core_inversion(t_h, t_d, (cenlat, cenlon, cendep),
-                                         orig, (Ta,Tb), MRF, observed_displacements,
+    M, misfit, GFmatrix = core_inversion(t_d, (cenlat, cenlon, cendep),
+                                         (Ta,Tb), MRF, observed_displacements,
                                          trlen, metadata, trlist, gfdir=gfdir,
-                                         GFs=True)
+                                         return_gfs=True)
 
     syn = (M[0]*GFmatrix[:,0] + M[1]*GFmatrix[:,1]
           + M[3]*GFmatrix[:,2] + M[4]*GFmatrix[:,3]
@@ -621,8 +618,8 @@ def wpinv(
         trace_lengths=OrderedDict(trace_lengths),
         centroid=cenloc,
         time_delay=t_d,
-        grid_search_candidates=inputs_latlon,
-        grid_search_results=moments,
+        grid_search_candidates=[row[1] for row in grid_search_inputs],
+        grid_search_results=grid_search_results,
     )
 
 
@@ -912,20 +909,26 @@ def RTdeconv(
     return dis
 
 
-def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
-                   observed_displacements, trlen, metadata, trlist,
-                   gfdir,
-                   GFs = False, residuals = False,
-                   OnlyGetFullGF=False, Max_t_d=200,
-                   ):
+def core_inversion(
+    t_d,
+    cmtloc,
+    periods,
+    MRF,
+    observed_displacements,
+    trlen,
+    metadata,
+    trlist,
+    gfdir,
+    return_gfs=False,
+    residuals=False,
+    OnlyGetFullGF=False,
+    max_t_d=200,
+):
     '''
     Perform the actual W-phase inversion.
 
-    :param float t_h: Half duration of the MRF in seconds.
     :param float t_d: Time delay
     :param tuple cmtloc: (lat, lon, depth) of the centroid's location.
-    :param orig: Origin time.
-    :type orig: :py:class:`obspy.core.obspy.core.utcdatetime.UTCDateTime`
     :param tuple periods: (Ta,Tb), passband periods.
     :param array MRF: Moment rate function.
     :param array observed_displacements: Array containing concatenated traces of observed disp.
@@ -934,14 +937,14 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
     :param list trlist: List with the station id which will contribute to the inv.
     :param gfdir: Path to the greens functions or a GreensFunctions instances.
     :param bool hdf5_flag: *True* if the greens functions are stored in HDF5, *False* if they are in SAC.
-    :param bool GFs: *True* if the greens functions should be returned.
+    :param bool return_gfs: *True* if the greens functions should be returned.
     :param bool residuals: *True*, return the 'raw' misfit from the least squares inversion,
         *False*, return the 'relative' misfit as a percentage: i.e. the 'raw' misfit divided by
         the norm of the synthetics.
-    :param bool OnlyGetFullGF: *True*, return the greens function matrix for the maximum time delay (*Max_t_d*)
+    :param bool OnlyGetFullGF: *True*, return the greens function matrix for the maximum time delay (*max_t_d*)
         without performing the inversion, *False*, perform the inversion for the time delay given
         by *t_d*.
-    :param numeric Max_t_d: Maximum time delay to consider if *OnlyGetFullGF = True*.
+    :param numeric max_t_d: Maximum time delay to consider if *OnlyGetFullGF = True*.
 
     :return: What is returned depends on the values of the parameters as described below.
 
@@ -951,7 +954,7 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
             0. moment tensor components in Nm ['RR', 'PP', 'TT', 'TP', 'RT', 'RP']
             #. misfit (percent L2 norm misfit error of the solution), and
 
-            If *GFs = True*
+            If *return_gfs = True*
 
             2. The greens function matrix also.
     '''
@@ -973,9 +976,9 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
 
 
     if OnlyGetFullGF:
-        Max_t_d = int(Max_t_d)
+        max_t_d = int(max_t_d)
         Nst = len(trlen)
-        GFmatrix = np.zeros((np.array(trlen, dtype=int).sum() + Max_t_d*Nst, 5))
+        GFmatrix = np.zeros((np.array(trlen, dtype=int).sum() + max_t_d*Nst, 5))
         tb = 0
     else:
         GFmatrix = np.zeros((np.array(trlen, dtype=int).sum(), 5))
@@ -1029,15 +1032,15 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
         synth = np.apply_along_axis(wphase_filter, -1, synth)
 
         if OnlyGetFullGF:
-            synth = ltrim(synth, t_p - Max_t_d, delta)
-            synth = synth[:, :trlen[i] + Max_t_d]
+            synth = ltrim(synth, t_p - max_t_d, delta)
+            synth = synth[:, :trlen[i] + max_t_d]
         else:
             synth = ltrim(synth, t_p - t_d, delta)
             synth = synth[:, :trlen[i]]
 
         if OnlyGetFullGF:
             ta = tb
-            tb = ta + Max_t_d + (indexes[i+1] - indexes[i])
+            tb = ta + max_t_d + (indexes[i+1] - indexes[i])
         else:
             ta = indexes[i]
             tb = indexes[i+1]
@@ -1069,7 +1072,7 @@ def core_inversion(t_h, t_d, cmtloc,orig, periods, MRF,
     else:
         misfit = 100.*np.sqrt(np.sum((syn-observed_displacements)**2)/np.sum(syn**2))
 
-    if GFs:
+    if return_gfs:
         return M, misfit, GFmatrix
 
     return M, misfit
@@ -1135,6 +1138,19 @@ def core_inversion_wrapper(allarg):
     except Exception:
         raise Exception("".join(traceback.format_exception(*sys.exc_info())))
 
+
+def minimize_misfit(inputs, processes=None):
+    """Given a list of input tuples for core_inversion, find the one with the
+    lowest misfit.
+
+    :param inputs: an iterable of tuples to provided to core_inversion as args.
+    :param processes: number of parallel processes to use.
+    :return: A tuple (index_of_minimizer, moment_tensor, misfit, results list)."""
+    with ProcessPoolExecutor(max_workers=processes) as pool:
+        results = list(pool.map(core_inversion_wrapper, inputs))
+    misfits = np.array([x[1] for x in results])
+    i_min = misfits.argmin()
+    return i_min, results[i_min][0], results[i_min][1], results
 
 
 def remove_individual_traces(tol, M, GFmatrix, observed_displacements,

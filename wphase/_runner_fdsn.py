@@ -17,6 +17,7 @@ from obspy.core.inventory import Inventory
 from wphase.psi.inventory import get_waveforms, build_metadata_dict
 from wphase.psi.core import wpinv
 from wphase.psi.exceptions import InversionError
+from traceback import format_exc
 
 import wphase.settings as settings
 from wphase.wputils import OutputDict, WPInvProfiler, post_process_wpinv
@@ -296,7 +297,7 @@ def runwphase(
                     make_maps=output_dir and make_maps,
                     make_plots=output_dir and make_plots)
             except Exception as e:
-                wphase_output.add_warning("Error during post-processing: %s" % e)
+                wphase_output.add_warning("Error during post-processing. %s" % format_exc())
 
     except InversionError as e:
         wphase_output.add_warning(str(e))
@@ -304,6 +305,6 @@ def runwphase(
         if raise_errors:
             raise
         wphase_output[settings.WPHASE_ERROR_KEY] = str(e)
-        wphase_output[settings.WPHASE_ERROR_STACKTRACE_KEY] = "".join(traceback.format_exception(*sys.exc_info()))
+        wphase_output[settings.WPHASE_ERROR_STACKTRACE_KEY] = format_exc()
 
     return wphase_output

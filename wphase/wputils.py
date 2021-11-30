@@ -23,8 +23,13 @@ except ImportError:
                                          MomentTensor)
 
 
-from wphase.psi import seismoutils
-from wphase.plotting import plot_grid_search, plot_station_coverage, plot_preliminary_fit, plot_waveforms
+from wphase.psi.seismoutils import get_azimuths, azimuthal_gap
+from wphase.plotting import (
+    plot_grid_search,
+    plot_preliminary_fit,
+    plot_station_coverage,
+    plot_waveforms,
+)
 from wphase.psi.model import OL1, OL2, OL3
 from wphase import settings
 
@@ -136,14 +141,39 @@ def wpinv_for_eatws(M, cenloc):
     :param cenloc: The centroid location, (cenlat,cenlon,cendep)
     :return: antelope's moment tensor info in a dictionary.
     """
+    M2 = M*M
+    m0 = np.sqrt(0.5*(M2[0]+M2[1]+M2[2])+M2[3]+M2[4]+M2[5])
+    mag = 2./3.*(np.log10(m0)-9.10)
 
-    results = {}
-    results['tmpp'] = M[2]
-    results['tmrp'] = M[4]
-    results['tmrr'] = M[0]
-    results['tmrt'] = M[3]
-    results['tmtp'] = M[5]
-    results['tmtt'] = M[1]
+    np1 = mt2plane(MomentTensor(M, 0))
+    np2 = aux_plane(np1.strike, np1.dip, np1.rake)
+
+    results = dict(
+        tmpp=M[2],
+        tmrp=M[4],
+        tmrr=M[0],
+        tmrt=M[3],
+        tmtp=M[5],
+        tmtt=M[1],
+
+        scm=m0,
+        drmag=mag,
+        drmagt='Mww',
+
+        drlat=cenloc[0],
+        drlon=cenloc[1],
+        drdepth=cenloc[2],
+
+        str1=np1.strike,
+        dip1=np1.dip,
+        rake1=np1.rake,
+
+        str2=np2[0],
+        dip2=np2[1],
+        rake2=np2[2],
+
+        auth=settings.GA_AUTHORITY,
+    )
 
     try:
         DC, CLVD = decomposeMT(M)
@@ -154,39 +184,21 @@ def wpinv_for_eatws(M, cenloc):
         logger.warning("Error computing DC/CLVD decomposition: %s",
                        traceback.format_exc())
 
-    # from roberto's code
-    M2 = M*M
-    m0 = np.sqrt(0.5*(M2[0]+M2[1]+M2[2])+M2[3]+M2[4]+M2[5])
-    mag = 2./3.*(np.log10(m0)-9.10)
-
-    results['scm'] = m0
-    results['drmag'] = mag
-    results['drmagt'] = 'Mww'
-
-    results['drlat'] = cenloc[0]
-    results['drlon'] = cenloc[1]
-    results['drdepth'] = cenloc[2]
-
-    moment_tensor = MomentTensor(M, 0)
-    nodalplane = mt2plane(moment_tensor)
-    results['str1'] = nodalplane.strike
-    results['dip1'] = nodalplane.dip
-    results['rake1'] = nodalplane.rake
-
-    np2 = aux_plane(
-        nodalplane.strike,
-        nodalplane.dip,
-        nodalplane.rake)
-    results['str2'] = np2[0]
-    results['dip2'] = np2[1]
-    results['rake2'] = np2[2]
-
-    results['auth'] = settings.GA_AUTHORITY
-
     return results
 
 
-
+def plot_and_save_beachball(M, working_dir, OL):
+    beachBallPrefix = os.path.join(
+        working_dir,
+        settings.WPHASE_BEACHBALL_PREFIX
+    )
+    plot_beachball(
+        M,
+        width=400,
+        outfile=beachBallPrefix + "_OL{}.png".format(OL),
+        format='png'
+    )
+    plt.close('all') # obspy doesn't clean up after itself...
 
 
 def post_process_wpinv(
@@ -207,33 +219,41 @@ def post_process_wpinv(
     else:
         logger.warning("Could not find preliminary calculation details in result.")
 
-    M_OL2 = None
-    WPOL = 1
     traces = res.used_traces
-
-    if WPOL >= 2:
-        wphase_output['QualityParams']['azimuthal_gap'] = seismoutils.AzimuthalGap(
-                metadata,
-                traces,
-                (eqinfo['lat'], eqinfo['lon']))[0]
-        wphase_output['QualityParams']['number_of_stations'] = len(set(
-            trid.split('.')[1] for trid in traces))
-        wphase_output['QualityParams']['number_of_channels'] = len(traces)
-
-
-    # extract the results to local variables
+    M = None
     if isinstance(res, OL2):
-        WPOL = 2
-        M = res.moment_tensor
+        wphase_output['QualityParams'] = dict(
+            azimuthal_gap=azimuthal_gap(
+                get_azimuths(metadata, traces, (eqinfo['lat'], eqinfo['lon']))
+            ),
+            number_of_stations=len(set(trid.split('.')[1] for trid in traces)),
+            number_of_channels=len(traces),
+        )
+
         obs = res.observed_displacements
         syn = res.synthetic_displacements
-        traces = res.trace_lengths
-    else:
-        traces = list(res.preliminary_calc_details['trids'])
+        M = wphase_output['OL2'].pop('M')
+
+        if make_plots:
+            try:
+                plot_and_save_beachball(M, working_dir, OL=2)
+            except Exception:
+                wphase_output.add_warning("Failed to create beachball for OL2. {}"
+                                          .format(format_exc()))
+            if len(traces) > 0:
+                plot_waveforms(
+                    working_dir,
+                    settings.WPHASE_RESULTS_TRACES_PREFIX,
+                    syn,
+                    obs,
+                    res.trace_lengths)
+
+            else:
+                wphase_output.add_warning('Could not create wphase waveforms plot - no traces to plot!')
+
 
     if isinstance(res, OL3):
-        WPOL = 3
-        M_OL2 = wphase_output['OL2'].pop('M')
+        M = res.moment_tensor
         cenloc = res.centroid
 
         results = wpinv_for_eatws(M, cenloc)
@@ -247,64 +267,11 @@ def post_process_wpinv(
 
         if make_plots:
             try:
-                # Display the beachball for OL2
-                beachBallPrefix = os.path.join(
-                    working_dir,
-                    settings.WPHASE_BEACHBALL_PREFIX)
-                plot_beachball(M_OL2, width=400,
-                    outfile = beachBallPrefix + "_OL2.png", format='png')
-                plt.close('all') # obspy doesn't clean up after itself...
+                plot_and_save_beachball(M, working_dir, OL=3)
             except Exception:
-                wphase_output.add_warning("Failed to create beachball for OL2.")
+                wphase_output.add_warning("Failed to create beachball for OL3. {}"
+                                          .format(format_exc()))
 
-    if 'OL2' in wphase_output:
-        wphase_output['OL2'].pop('M', None)
-
-    if make_maps:
-        try:
-            # Make a plot of the station distribution
-            hyplat =  eqinfo['lat']
-            hyplon =  eqinfo['lon']
-            lats = [metadata[trid]['latitude'] for trid in traces]
-            lons = [metadata[trid]['longitude'] for trid in traces]
-            stationDistPrefix = os.path.join(
-                working_dir,
-                settings.WPHASE_STATION_DISTRIBUTION_PREFIX)
-            plot_station_coverage(
-                (hyplat,hyplon),
-                lats,
-                lons,
-                mt=M,
-                filename=stationDistPrefix + '.png')
-        except Exception:
-            wphase_output.add_warning("Failed to create station distribution plot. {}".format(format_exc()))
-
-
-    if make_plots:
-        try:
-            # Display the beachball for the output level achieved
-            beachBallPrefix = os.path.join(working_dir, "{}_OL{}".format(
-                settings.WPHASE_BEACHBALL_PREFIX, WPOL))
-            plot_beachball(M, width=400,
-                outfile = beachBallPrefix + ".png", format='png')
-            plt.close('all') # obspy doesn't clean up after itself...
-        except Exception:
-            wphase_output.add_warning("Failed to create beachball for OL{}. {}".format(
-                WPOL, format_exc()))
-
-    if WPOL >= 2 and make_plots and len(traces) > 0:
-        # Secondly the wphase traces plot, syn Vs obs
-        plot_waveforms(
-            working_dir,
-            settings.WPHASE_RESULTS_TRACES_PREFIX,
-            syn,
-            obs,
-            res.trace_lengths)
-
-    elif make_plots:
-        wphase_output.add_warning('Could not create wphase results plot. OL=%d, len(traces)=%d' % (WPOL, len(traces)))
-
-    if WPOL==3:
         if make_maps:
             # draw the grid search plot
             coords = np.asarray(res.grid_search_candidates)
@@ -338,6 +305,25 @@ def post_process_wpinv(
                 zorder=999,
                 filename=gridSearchPrefix
             )
+
+    if make_maps:
+        try:
+            # Make a plot of the station distribution
+            hyplat = eqinfo['lat']
+            hyplon = eqinfo['lon']
+            lats = [metadata[trid]['latitude'] for trid in traces]
+            lons = [metadata[trid]['longitude'] for trid in traces]
+            stationDistPrefix = os.path.join(
+                working_dir,
+                settings.WPHASE_STATION_DISTRIBUTION_PREFIX)
+            plot_station_coverage(
+                (hyplat,hyplon),
+                lats,
+                lons,
+                mt=M,
+                filename=stationDistPrefix + '.png')
+        except Exception:
+            wphase_output.add_warning("Failed to create station distribution plot. {}".format(format_exc()))
 
 
 def decomposeMT(M):

@@ -72,6 +72,10 @@ MEDIAN_REJECTION_COEFF = [0.1, 3]
 # Minimum number of stations required to begin the inversion.
 MINIMUM_STATIONS = 4
 
+# Maximum azimuthal gap allowed to begin the inversion (in degrees)
+# By default this is set to 360 and thus does nothing.
+MAXIMUM_AZIMUTHAL_GAP = 360
+
 # Maximum time delay t_d in seconds. We'll search for the optimal t_d up to
 # this value.
 MAXIMUM_TIME_DELAY = 200.

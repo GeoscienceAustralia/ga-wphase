@@ -37,6 +37,8 @@ from .greens import GreensFunctions
 from .bandpass import bandpassfilter
 from .model import OL1, OL2, OL3
 from .exceptions import InversionError, RTdeconvError
+from .seismoutils import azimuthal_gap
+
 logger = logging.getLogger(__name__)
 
 def wpinv(
@@ -284,10 +286,13 @@ def wpinv(
     accepted_traces = [i for i in range(len(tr_p2p))
                          if tr_p2p[i] < mrcoeff[1]*median_p2p
                          and tr_p2p[i] > mrcoeff[0]*median_p2p]
-    if not EnoughAzimuthalCoverage():
-        raise InversionError("Lack of azimuthal coverage. Aborting.")
+    gap = azimuthal_gap(AZI)
+    if gap > settings.MAXIMUM_AZIMUTHAL_GAP:
+        raise InversionError("Lack of azimuthal coverage (%.0f° > %.0f°). Aborting."
+                             % (gap, settings.settings.MAXIMUM_AZIMUTHAL_GAP))
     if len(accepted_traces) < settings.MINIMUM_STATIONS:
-        raise InversionError("Lack of stations. Aborting.")
+        raise InversionError("Lack of stations (%d < %d). Aborting."
+                             % (len(accepted_traces), settings.MINIMUM_STATIONS))
 
     logger.info("Traces accepted for preliminary magnitude calculation: {}"
                 .format(len(accepted_traces)))

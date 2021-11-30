@@ -88,3 +88,19 @@ def station_pruning(META,trlist, cutoffs=[1.,2.,5], units='deg'):
                         pass
         trlist = list(red_trlist)# copying reduced list
     return  trlist
+
+
+def azimuthal_gap(azis):
+    """Compute the (largest) azimuthal gap of a list of azimuths.
+
+    Parameters
+    ----------
+    azis : Iterable[float]
+        Station azimuths in degrees.
+    """
+    if len(azis) < 2:
+        return 360.
+    azis = np.asarray(azis) % 360
+    azis.sort()
+    gaps = (azis - np.roll(azis, 1)) % 360
+    return gaps.max()

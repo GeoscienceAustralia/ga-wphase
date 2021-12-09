@@ -1,9 +1,15 @@
 """Methods to convert results to seiscomp formats."""
 from __future__ import absolute_import
 from contextlib import contextmanager
+import logging
+
+
+from obspy.core import UTCDateTime
 from seiscomp3 import DataModel as DM, Core, IO
 from seiscomp3 import Logging
-from wphase.result import FMItem
+from wphase.psi.model import WPhaseResult
+
+logger = logging.getLogger(__name__)
 
 _charstar_is_bytes = None
 
@@ -40,7 +46,9 @@ def charstar(string):
             return string
 
 def datetime_to_seiscomp(dt):
-    """Convert a python UTC datetime to a seiscomp Time."""
+    """Convert a python or obspy UTC datetime to a seiscomp Time."""
+    if isinstance(dt, UTCDateTime):
+        dt = dt.datetime
     return Core.Time(dt.year,
                      dt.month,
                      dt.day,
@@ -54,20 +62,20 @@ def datetime_to_seiscomp(dt):
 def SCNotifier():
     """seiscomp entities created (and associated with each other) inside this
     context manager will be logged to the Notifier."""
+    wasEnabled = DM.Notifier.IsEnabled()
     try:
-        wasEnabled = DM.Notifier.IsEnabled()
         DM.Notifier.Enable()
         yield
     finally:
         DM.Notifier.SetEnabled(wasEnabled)
 
 
-def createObjects(item, agency, evid=None, with_notifiers=False, logging=Logging):
-    """Convert an FMItem to seiscomp3.DataModel objects, optionally sending
+def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
+    """Convert a WPhaseResult to seiscomp3.DataModel objects, optionally sending
     Notifier events to messaging.
 
-    :param FMItem item:
-        A W-Phase result represented as an FMItem instance.
+    :param WPhaseResult item:
+        Result of a W-Phase inversion.
     :param bool with_notifiers:
         If true, seiscomp3.DataModel.Notifier instances will be created linking
         the FocalMechanism and derived Origin to the triggering event.
@@ -76,6 +84,11 @@ def createObjects(item, agency, evid=None, with_notifiers=False, logging=Logging
         A dictionary with keys focalMechanism, derivedOrigin, momentMagnitude
         (mapped to seiscomp3.DataModel objects), and optionally notifiers
         (mapped to a list of Notifiers)."""
+    mt = item.MomentTensor
+    preferredOL = item.OL3 or item.OL2
+    if not (mt and preferredOL):
+        raise ValueError("W-Phase result contains no MomentTensor to convert/send!")
+
     # get current time in UTC
     time = Core.Time.GMT()
 
@@ -83,58 +96,64 @@ def createObjects(item, agency, evid=None, with_notifiers=False, logging=Logging
     ci = DM.CreationInfo()
     ci.setCreationTime(time)
     ci.setAgencyID(agency)
-    ci.setAuthor(charstar(item.author))
+    ci.setAuthor(charstar(mt.auth))
 
-    originTime = DM.TimeQuantity(
-        datetime_to_seiscomp(item.originTime)
-    )
+    originTime = DM.TimeQuantity(datetime_to_seiscomp(item.Event.time))
 
     # fill derived origin
     derivedOrigin = DM.Origin.Create()
     derivedOrigin.setCreationInfo(ci)
     derivedOrigin.setTime(originTime)
-    derivedOrigin.setLatitude(DM.RealQuantity(item.lat))
-    derivedOrigin.setLongitude(DM.RealQuantity(item.lon))
-    derivedOrigin.setDepth(DM.RealQuantity(item.depth))
+    derivedOrigin.setLatitude(DM.RealQuantity(mt.drlat))
+    derivedOrigin.setLongitude(DM.RealQuantity(mt.drlon))
+    derivedOrigin.setDepth(DM.RealQuantity(mt.drdepth))
     derivedOrigin.setEvaluationMode(DM.AUTOMATIC)
     derivedOrigin.setEvaluationStatus(DM.CONFIRMED)
 
     originQuality = DM.OriginQuality()
-    try: originQuality.setUsedPhaseCount(item.usedPhaseCount)
-    except Exception: pass
+    if item.QualityParams is not None:
+        try:
+            originQuality.setUsedPhaseCount(item.QualityParams.number_of_channels)
+        except Exception:
+            pass
 
-    try: originQuality.setUsedStationCount(item.usedStationCount)
-    except Exception: pass
+        try:
+            originQuality.setUsedStationCount(item.QualityParams.number_of_stations)
+        except Exception:
+            pass
 
     derivedOrigin.setQuality(originQuality)
 
-    if item.centroid: derivedOrigin.setType(DM.CENTROID)
-    else: derivedOrigin.setType(DM.HYPOCENTER)
+    if item.Centroid:
+        derivedOrigin.setType(DM.CENTROID)
+    else:
+        derivedOrigin.setType(DM.HYPOCENTER)
 
     # fill magnitude
     try:
         mag = DM.Magnitude.Create()
-        mag.setMagnitude(DM.RealQuantity(item.mag))
+        mag.setMagnitude(DM.RealQuantity(mt.drmag))
         mag.setCreationInfo(ci)
         mag.setOriginID(derivedOrigin.publicID())
-        mag.setType(charstar(item.mag_type))
-        mag.setStationCount(item.usedStationCount)
+        mag.setType(charstar(mt.drmagt))
+        if item.QualityParams:
+            mag.setStationCount(item.QualityParams.number_of_stations)
         mag.setMethodID("wphase")
     except Exception as e:
-        logging.error('Failed to configure magnitude: {}'.format(e))
+        logger.error("Failed to configure magnitude: {}".format(e))
 
     ## Set FocalMechanism
     nodalPlanes = DM.NodalPlanes()
     np1 = DM.NodalPlane()
     np2 = DM.NodalPlane()
 
-    np1.setStrike(DM.RealQuantity(item.str1))
-    np1.setDip(DM.RealQuantity(item.dip1))
-    np1.setRake(DM.RealQuantity(item.rake1))
+    np1.setStrike(DM.RealQuantity(mt.str1))
+    np1.setDip(DM.RealQuantity(mt.dip1))
+    np1.setRake(DM.RealQuantity(mt.rake1))
 
-    np2.setStrike(DM.RealQuantity(item.str2))
-    np2.setDip(DM.RealQuantity(item.dip2))
-    np2.setRake(DM.RealQuantity(item.rake2))
+    np2.setStrike(DM.RealQuantity(mt.str2))
+    np2.setDip(DM.RealQuantity(mt.dip2))
+    np2.setRake(DM.RealQuantity(mt.rake2))
 
     nodalPlanes.setNodalPlane1(np1)
     nodalPlanes.setNodalPlane2(np2)
@@ -144,34 +163,50 @@ def createObjects(item, agency, evid=None, with_notifiers=False, logging=Logging
     fm.setCreationInfo(ci)
     fm.setMethodID("wphase")
     fm.setEvaluationMode(DM.AUTOMATIC)
-    fm.setMisfit(item.overallMisfit)
-    fm.setStationPolarityCount(item.usedPhaseCount)
 
-    try: fm.setAzimuthalGap(item.azimuthalGap)
-    except Exception: pass
+    misfit = preferredOL.misfit / 100.0
+    fm.setMisfit(misfit)
+    if item.QualityParams:
+        fm.setStationPolarityCount(item.QualityParams.number_of_channels)
+        try:
+            fm.setAzimuthalGap(item.QualityParams.azimuthal_gap)
+        except Exception:
+            pass
 
     # TODO set axis
 
     # fill tensor
     tensor = DM.Tensor()
 
-    try: tensor.setMtp(DM.RealQuantity(item.tmtp))
-    except Exception: pass
+    try:
+        tensor.setMtp(DM.RealQuantity(fm.tmtp))
+    except Exception:
+        pass
 
-    try: tensor.setMtt(DM.RealQuantity(item.tmtt))
-    except Exception: pass
+    try:
+        tensor.setMtt(DM.RealQuantity(fm.tmtt))
+    except Exception:
+        pass
 
-    try: tensor.setMrt(DM.RealQuantity(item.tmrt))
-    except Exception: pass
+    try:
+        tensor.setMrt(DM.RealQuantity(fm.tmrt))
+    except Exception:
+        pass
 
-    try: tensor.setMrr(DM.RealQuantity(item.tmrr))
-    except Exception: pass
+    try:
+        tensor.setMrr(DM.RealQuantity(fm.tmrr))
+    except Exception:
+        pass
 
-    try: tensor.setMrp(DM.RealQuantity(item.tmrp))
-    except Exception: pass
+    try:
+        tensor.setMrp(DM.RealQuantity(fm.tmrp))
+    except Exception:
+        pass
 
-    try: tensor.setMpp(DM.RealQuantity(item.tmpp))
-    except Exception: pass
+    try:
+        tensor.setMpp(DM.RealQuantity(fm.tmpp))
+    except Exception:
+        pass
 
     # fill moment tensor object
     mt = DM.MomentTensor.Create()
@@ -180,14 +215,20 @@ def createObjects(item, agency, evid=None, with_notifiers=False, logging=Logging
     mt.setDerivedOriginID(derivedOrigin.publicID())
     mt.setMethodID("wphase")
 
-    try: mt.setClvd(item.clvd)
-    except Exception: pass
+    try:
+        mt.setClvd(fm.clvd)
+    except Exception:
+        pass
 
-    try: mt.setDoubleCouple(item.dc)
-    except Exception: pass
+    try:
+        mt.setDoubleCouple(fm.dc)
+    except Exception:
+        pass
 
-    try: mt.setMomentMagnitudeID(mag.publicID())
-    except Exception: pass
+    try:
+        mt.setMomentMagnitudeID(mag.publicID())
+    except Exception:
+        pass
 
     # Since we don't want to overwrite the event data itself, but we do
     # want to explicitly associate our data to the correct event, we have
@@ -223,7 +264,8 @@ def createObjects(item, agency, evid=None, with_notifiers=False, logging=Logging
         ret["notifiers"] = notifiers
     return ret
 
-def createAndSendObjects(item, connection, logging=Logging, **kwargs):
+
+def createAndSendObjects(item, connection, **kwargs):
     """Convert the given FMItem to seiscomp3.DataModel objects, send them over
     the given connection, and return them.
 
@@ -232,7 +274,7 @@ def createAndSendObjects(item, connection, logging=Logging, **kwargs):
     :rtype: dict"""
     # create SeiscomP3 objects from focal mechanism item
     with SCNotifier():
-        ret = createObjects(item, with_notifiers=True, logging=logging, **kwargs)
+        ret = createObjects(item, with_notifiers=True, **kwargs)
 
     try:
         # serialize objects
@@ -240,12 +282,13 @@ def createAndSendObjects(item, connection, logging=Logging, **kwargs):
 
         # forward message to the messaging system
         connection.send(msg)
-        logging.info("sent focal mechanism successfully")
+        logger.info("sent focal mechanism successfully")
     except Exception as e:
         # Log error and continue, since we still created the objs fine
-        logging.error('failed send objects to messaging: {}'.format(e))
+        logger.error("failed send objects to messaging: {}".format(e))
 
     return ret
+
 
 def writeSCML(filename, objects):
     """Given seiscomp3.DataModel objects (as produced by createObjects),

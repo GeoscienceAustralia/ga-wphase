@@ -9,6 +9,7 @@ import sys
 from tempfile import NamedTemporaryFile
 
 from datetime import datetime, timedelta
+from typing import Optional
 
 from obspy.core import UTCDateTime
 
@@ -16,8 +17,8 @@ from seiscomp3 import DataModel as DM, Logging, IO, Core
 from seiscomp3.Client import Application
 
 from wphase import logger, runwphase, settings
+from wphase.psi.model import Event, WPhaseResult
 from wphase.email import send_email
-from wphase.result import WPhaseParser, FMItem, jsonencode_np
 from wphase.seiscomp import createAndSendObjects, writeSCML, charstar
 
 
@@ -122,15 +123,15 @@ class WPhase(Application):
             "Path in which to save raw inventory (as stationXML)")
 
         self.commandline().addGroup("Input")
-        self.commandline().addStringOption(
+        self.commandline().addDoubleOption(
             "Input",
             "lat",
             "Latitude of the event.")
-        self.commandline().addStringOption(
+        self.commandline().addDoubleOption(
             "Input",
             "lon",
             "Longitude of the event.")
-        self.commandline().addStringOption(
+        self.commandline().addDoubleOption(
             "Input",
             "depth",
             "Depth of the event.")
@@ -282,7 +283,7 @@ class WPhase(Application):
             # and written to disk.
 
             # depth only needed for BoM XML
-            try: depth = float(self.commandline().optionString("depth"))
+            try: depth = float(self.commandline().optionDouble("depth"))
             except Exception: depth = 0.
 
             getter('save-waveforms', 'save_waveforms')
@@ -291,11 +292,12 @@ class WPhase(Application):
             getter('inventory', 'inventory')
 
             try:
-                self.eqinfo = {
-                    'lat' : float(self.commandline().optionString("lat")),
-                    'lon' : float(self.commandline().optionString("lon")),
-                    'dep' : depth,
-                    'time': UTCDateTime(self.commandline().optionString("time"))}
+                self.eqinfo = Event(
+                    latitude=float(self.commandline().optionDouble("lat")),
+                    longitude=float(self.commandline().optionDouble("lon")),
+                    depth=depth,
+                    time=self.commandline().optionString("time"),
+                )
             except Exception:
                 logger.error('You must provide either lat/lon/time or a JSON payload')
                 return False
@@ -330,6 +332,7 @@ class WPhase(Application):
 
             if self.evid is not None:
                 self.output = os.path.join(self.output, self.evid)
+                self.eqinfo.id = self.evid
 
             if self.resultid is not None:
                 self.output = os.path.join(self.output, self.resultid)
@@ -366,19 +369,20 @@ class WPhase(Application):
         if Application.init(self) == False:
             return False
 
-        item = None
-        res = None
-        parser = WPhaseParser()
+        result: Optional[WPhaseResult] = None
 
         Logging.enableConsoleLogging(Logging.getGlobalChannel("error"))
         wphase_failed = False
 
-        if self.evid is not None:
-            self.eqinfo['id'] = self.evid
-        if self.filename is None:
+        if self.filename is not None:
+            # Output JSON was provided, so we just send it to messaging.
+            logger.info("Parsing W-Phase result from file.")
+            result = WPhaseResult.parse_file(self.filename)
+        else:
+            # Run the inversion.
             try:
                 logger.info("Starting W-Phase.")
-                res = runwphase(
+                result = runwphase(
                     output_dir=self.output,
                     server=self.server,
                     eqinfo=self.eqinfo,
@@ -388,55 +392,27 @@ class WPhase(Application):
                     save_waveforms=self.save_waveforms,
                     save_inventory=self.save_inventory,
                     waveforms=self.waveforms,
-                    inventory=self.inventory)
+                    inventory=self.inventory,
+                )
             except Exception:
-                from traceback import format_exc
-                logger.error('failed to run wphase: %s', format_exc())
+                logger.exception("W-Phase run failed.")
                 wphase_failed = True
-            else:
-                if self.evid is not None:
-                    try:
-                        # TODO: Should this be done in runwphase?
-                        res[settings.WPHASE_EVENT_KEY]['id'] = self.evid
-                        with open(os.path.join(
-                                self.output,
-                                settings.WPHASE_OUTPUT_FILE_NAME), 'w') as of:
-                            json.dump(res, of, default=jsonencode_np)
-                    except Exception as e:
-                        # not sure how we would get here, but we just don't want
-                        # to stop the rest of processing
-                        logger.error('failed to add event id to event: %s', e)
 
-                try:
-                    try: res_dict = res.as_dict()
-                    except Exception: res_dict = res
-                    item = parser.read(json_data=res_dict)
-                except Exception as e:
-                    logger.error('failed to parse event JSON for SC3: %s', e)
-                    item = None
-
-        else:
+        if result is not None:
             try:
-                item = parser.read(filename=self.filename)
-            except Exception as e:
-                logger.error('failed parse event JSON for SC3: %s', e)
-
-        if item is not None:
-            try:
-                objs = createAndSendObjects(item, self.connection(),
-                                            evid=self.evid, logging=logger,
-                                            agency=self.agency)
-            except Exception as e:
-                logger.error('failed create objects for SC3: %s', e)
+                objs = createAndSendObjects(
+                    result, self.connection(), evid=self.evid, agency=self.agency
+                )
+            except Exception:
+                logger.exception("Failed to create objects for SC3.")
             else:
+                filename = os.path.join(str(self.output), "sc3.xml")
                 try:
                     # write output to file
-                    filename = os.path.join(self.output, 'sc3.xml')
                     writeSCML(filename, objs)
                     logger.info("Stored results in SCML as %s", filename)
-                except Exception as e:
-                    logger.error('failed write SCML to file: %s', e)
-
+                except Exception:
+                    logger.exception("Failed to write SCML to %s.", filename)
 
         if self.write_s3:
             # We always want to write to S3, even in the event of failure as
@@ -459,37 +435,51 @@ class WPhase(Application):
 
         if self.notificationemail:
             # must be done after writing to S3
-            success = res is not None and 'MomentTensor' in res
-            subject, body = self.createEmail(event_id=self.evid,
-                                             result_id=self.resultid,
-                                             result_dict=res,
-                                             call_succeeded=success,
-                                             )
-            send_email(recipients=self.notificationemail,
-                       subject=self.email_subject_prefix + str(subject)
-                               + self.email_subject_postfix,
-                       message=body,
-                       from_email=self.fromemail,
-                       method=self.email_method,
-
-                       email_aws_region=self.email_aws_region,
-
-                       server=self.smtp_server,
-                       port=self.smtp_port,
-                       user=self.smtp_user,
-                       password=self.smtp_password,
-                       ssl=self.smtp_ssl,
-                       tls=self.smtp_tls,
-                       )
+            success = result is not None and result.MomentTensor is not None
+            subject, body = self.createEmail(
+                event_id=self.evid,
+                result_id=self.resultid,
+                result=result,
+                call_succeeded=success,
+            )
+            send_email(
+                recipients=self.notificationemail,
+                subject=self.email_subject_prefix
+                + str(subject)
+                + self.email_subject_postfix,
+                message=body,
+                from_email=self.fromemail,
+                method=self.email_method,
+                email_aws_region=self.email_aws_region,
+                server=self.smtp_server,
+                port=self.smtp_port,
+                user=self.smtp_user,
+                password=self.smtp_password,
+                ssl=self.smtp_ssl,
+                tls=self.smtp_tls,
+            )
 
         sys.exit(1 if wphase_failed else 0)
 
-    def createEmail(self, event_id, result_id, result_dict, call_succeeded):
+    def createEmail(
+        self,
+        event_id: str,
+        result_id: str,
+        result: Optional[WPhaseResult],
+        call_succeeded: bool,
+    ):
         """Create email subject and body to notify result.
 
         Override this in a subclass to produce a custom email."""
-        subject = 'W-Phase succeeded' if call_succeeded else 'W-Phase failed'
-        body = "<h2>W-Phase inversion {} for {} results:</h2> <pre>{}</pre>".format(result_id, event_id, json.dumps(result_dict))
+        subject = "W-Phase succeeded" if call_succeeded else "W-Phase failed"
+        if result is None:
+            body = "<h2>W-Phase inversion {} for {} failed with no usable error message.".format(
+                result_id, event_id
+            )
+        else:
+            body = "<h2>W-Phase inversion {} for {} results:</h2> <pre>{}</pre>".format(
+                result_id, event_id, result.json(indent=2)
+            )
         return subject, body
 
 

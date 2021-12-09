@@ -1,26 +1,25 @@
 """Implements runwphase, which acquires data from FDSN and runs the W-Phase
 inversion, including post-processing."""
-from __future__ import print_function
-from future import standard_library
-standard_library.install_aliases()
-from builtins import str
-
-import sys, os, traceback, logging
+import logging
+import os
 import pickle
-
-logger = logging.getLogger(__name__)
-
-import obspy
-from obspy.core.utcdatetime import UTCDateTime
-from obspy.clients.fdsn import Client
-from obspy.core.inventory import Inventory
-from wphase.psi.inventory import get_waveforms, build_metadata_dict
-from wphase.psi.core import wpinv
-from wphase.psi.exceptions import InversionError
+from functools import partial
 from traceback import format_exc
 
+import obspy
+from obspy.clients.fdsn import Client
+from obspy.core.inventory import Inventory
+from obspy.core.utcdatetime import UTCDateTime
+
 import wphase.settings as settings
-from wphase.wputils import OutputDict, WPInvProfiler, post_process_wpinv
+from wphase.psi.core import wpinv
+from wphase.psi.exceptions import InversionError
+from wphase.psi.inventory import build_metadata_dict, get_waveforms
+from wphase.psi.model import Event, WPhaseResult
+from wphase.wputils import (NoProfiler, OutputDict, WPInvProfiler,
+                            post_process_wpinv)
+
+logger = logging.getLogger(__name__)
 
 
 class ArrayLogger(logging.Handler):
@@ -50,8 +49,8 @@ class LogCapture(object):
 
 
 def load_metadata(
-        client,
-        eqinfo,
+        client: Client,
+        eqinfo: Event,
         dist_range,
         networks,
         inventory=None,
@@ -81,12 +80,12 @@ def load_metadata(
             base_call = {
                 "level"    : 'response',
                 "channel"  : 'BH?',
-                "latitude" : eqinfo['lat'],
-                "longitude": eqinfo['lon'],
+                "latitude" : eqinfo.latitude,
+                "longitude": eqinfo.longitude,
                 "minradius": dist_range[0],
                 "maxradius": dist_range[1],
-                "starttime": eqinfo['time'] - t_before_origin,
-                "endtime"  : eqinfo['time'] + t_after_origin}
+                "starttime": eqinfo.time - t_before_origin,
+                "endtime"  : eqinfo.time + t_after_origin}
 
             base_call.update(kwargs)
 
@@ -96,20 +95,15 @@ def load_metadata(
                 return client.get_stations(**args)
 
             logger.info('Retrieving metadata from server %s', client.base_url)
-            if depth == 0:
-                def caller():
-                    return make_call()
-            elif depth == 1:
-                def caller(net):
-                    return make_call(network=net)
-            elif depth == 2:
-                def caller(net, sta):
-                    return make_call(network=net, station=sta)
-            elif depth == 3:
-                def caller(net, sta, cha):
-                    return make_call(network=net, station=sta, channel=cha)
+            args = dict()
+            if depth >= 1:
+                args["network"] = net
+            if depth >= 2:
+                args["station"] = sta
+            if depth >= 3:
+                args["channel"] = cha
 
-            return caller
+            return partial(make_call, **args)
 
         try:
             # first, try and get everything
@@ -157,10 +151,8 @@ def runwphase(
         greens_functions_dir = settings.GREEN_DIR,
         n_workers_in_pool = settings.N_WORKERS_IN_POOL,
         processing_level = 3,
-        stations_to_exclude = None,
-        output_dir_can_exist = False,
         networks = 'II,IU',
-        eqinfo = None,
+        eqinfo: Event = None,
         wp_tw_factor = 15,
         t_beforeP = 1500.,
         t_afterWP = 60.,
@@ -179,7 +171,7 @@ def runwphase(
         raise_errors=False,
         save_waveforms=None,
         save_inventory=None,
-        **kwargs):
+        **kwargs) -> WPhaseResult:
 
     """
     Run wphase.
@@ -191,8 +183,6 @@ def runwphase(
         :py:data:`wphase.settings.N_WORKERS_IN_POOL`) specifies as many as is
         reasonable'.
     :param processing_level: Processing level.
-    :param stations_to_exclude: List of station identifiers to exclude.
-    :param output_dir_can_exist: Can the output directory already exist?
     """
 
     if server is None and (inventory is None or waveforms is None):
@@ -222,14 +212,14 @@ def runwphase(
             err_out.write('\n'.join(failures))
 
     if not metadata:
-        raise Exception('no metadata available for: \n{}'.format(
-            '\n\t'.join('{}: {}'.format(*kv) for kv in eqinfo.items())))
+        raise Exception('no metadata available for: {}'.format(eqinfo))
 
     if output_dir and pickle_inputs:
         with open(os.path.join(output_dir, 'inv.pkl'), 'wb') as inv_out:
             pickle.dump(metadata, inv_out)
 
-    wphase_output = OutputDict()
+    # This is replaced by the return value of wpinv unless there's a fatal error:
+    wphase_output = WPhaseResult(Event=eqinfo)
 
     try:
         # load the data for from the appropriate server
@@ -261,35 +251,26 @@ def runwphase(
                 pickle.dump((meta_t_p, streams), pkle)
 
         # do and post-process the inversion
-        with WPInvProfiler(wphase_output, output_dir):
+        profiler = WPInvProfiler(output_dir) if settings.PROFILE_WPHASE else NoProfiler()
+        with profiler:
             with LogCapture(logger, logging.WARNING) as capture:
-                res = wpinv(
-                    streams,
-                    meta_t_p,
-                    eqinfo,
-                    greens_functions_dir,
-                    processes = n_workers_in_pool,
-                    OL = processing_level,
-                    output_dic = wphase_output)
+                try:
+                    wphase_output = wpinv(
+                        streams,
+                        meta_t_p,
+                        eqinfo,
+                        greens_functions_dir,
+                        processes = n_workers_in_pool,
+                        OL = processing_level)
+                except InversionError as e:
+                    wphase_output.add_warning(e)
 
             for message in capture.messages:
                 wphase_output.add_warning(message)
 
-            # Add triggering event parameters to output dict:
-            wphase_output['Event'] = {}
-            wphase_output['Event']['depth'] = round(eqinfo['dep'],1)
-            wphase_output['Event']['latitude'] = round(eqinfo['lat'],3)
-            wphase_output['Event']['longitude'] = round(eqinfo['lon'],3)
-            # 2016-01-18T18:24:16.770000Z -> 2016-01-18 18:24:16.770000
-            wphase_output['Event']['time'] = \
-                str(eqinfo['time']).replace("T"," ").replace("Z","")
-            if 'id' in eqinfo:
-                wphase_output['Event']['id'] = eqinfo['id']
-
             try:
                 post_process_wpinv(
-                    res = res,
-                    wphase_output = wphase_output,
+                    output = wphase_output,
                     WPOL = processing_level,
                     working_dir = output_dir,
                     eqinfo = eqinfo,
@@ -297,14 +278,15 @@ def runwphase(
                     make_maps=output_dir and make_maps,
                     make_plots=output_dir and make_plots)
             except Exception as e:
+                if raise_errors:
+                    raise
                 wphase_output.add_warning("Error during post-processing. %s" % format_exc())
+        wphase_output.WPInvProfile = profiler.html
 
-    except InversionError as e:
-        wphase_output.add_warning(str(e))
     except Exception as e:
         if raise_errors:
             raise
-        wphase_output[settings.WPHASE_ERROR_KEY] = str(e)
-        wphase_output[settings.WPHASE_ERROR_STACKTRACE_KEY] = format_exc()
+        wphase_output.Error = str(e)
+        wphase_output.StackTrace = format_exc()
 
     return wphase_output

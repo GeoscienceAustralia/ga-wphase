@@ -1,42 +1,214 @@
-"""Simple data classes for representing results internally."""
+"""Data models for W-Phase calculation input and outputs.
+
+There is no good naming convention here - unfortunately, the JSON output must
+follow a fixed schema to work with other GA systems, so we're kinda stuck with
+it."""
+
+
+from typing import List, Optional, OrderedDict, Tuple, TYPE_CHECKING
+
 import numpy as np
-from collections import OrderedDict
-try:
-    from collections.abc import Mapping
-except ImportError:
-    from collections import Mapping
+from obspy import UTCDateTime as _UTCDateTime
+from pydantic import BaseModel
 
-class Data(Mapping):
-    # TODO: switch to dataclasses with real type annotations after ditching
-    # python 2
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+# Sadly we have to jump through some hoops to cleanly add pydantic validators
+# to third-party types if we want it to type-check correctly:
+if TYPE_CHECKING:
+    UTCDateTime = _UTCDateTime
+    Array = np.ndarray
+else:
+    class UTCDateTime(_UTCDateTime):
+        @classmethod
+        def __get_validators__(cls):
+            yield lambda v: _UTCDateTime(v)
 
-    def __len__(self):
-        return len(self.__dict__)
-    def __iter__(self):
-        return iter(self.__dict__)
-    def __getitem__(self, k):
-        return self.__dict__[k]
+    class Array(np.ndarray):
+        @classmethod
+        def __get_validators__(cls):
+            yield np.asarray
 
-class OL1(Data):
-    preliminary_magnitude    = None # type: float
-    preliminary_calc_details = None # type: dict
-    used_traces              = None # type: list[str]
 
-class OL2(OL1):
-    moment_tensor            = None # type: np.array
-    observed_displacements   = None # type: np.array
-    synthetic_displacements  = None # type: np.array
-    trace_lengths            = None # type: OrderedDict[str, int]
+class Data(BaseModel):
+    """Fields listed in this set will not be included in serialized JSON outputs."""
 
-class OL3(OL2):
-    centroid                 = None # type: tuple[float, float, float]
-    time_delay               = None # type: float
-    grid_search_candidates   = None # type: list[tuple[float, float]]
+    _exclude_from_json = set()
+
+    def dict(self, *args, exclude=None, **kwargs):
+        if isinstance(exclude, dict):
+            exclude = {**exclude, **{x: ... for x in self._exclude_from_json}}
+        else:
+            exclude = {*(exclude or []), *self._exclude_from_json}
+        return super().dict(*args, exclude=exclude, *kwargs)
+
+    class Config:
+        json_encoders = {
+            _UTCDateTime: lambda t: str(t).replace("T", " ").replace("Z", ""),
+            np.ndarray: np.ndarray.tolist,
+        }
+        arbitrary_types_allowed = (
+            True  # since we have some non-serialized ndarray fields
+        )
+        extra = "forbid"
+
+
+class OL1Result(Data):
+    """Result of the preliminary magnitude fit, which is used as a first guess
+    for the actual W-Phase inversion."""
+
+    magnitude: float
+    nstations: int
+    used_traces: List[str]
+
+    preliminary_calc_details: dict
+    _exclude_from_json = {"preliminary_calc_details"}
+
+
+class OL2Result(Data):
+    """A result of the first inversion for the deviatoric moment tensor.
+
+    This model includes serialized fields (which are used to produce the wphase
+    output JSON) and non-serialized fields (which are for internal use only and
+    contain heavy-duty data like the synthetic waveforms)."""
+
+    Mrr: float
+    Mtt: float
+    Mpp: float
+    Mrt: float
+    Mrp: float
+    Mtp: float
+    misfit: float
+    m0: float
+    magnitude: float
+    depth: float
+    time_delay: float
+    used_traces: List[str]
+    trace_lengths: OrderedDict[str, int]
+
+    moment_tensor: np.ndarray
+    observed_displacements: np.ndarray
+    synthetic_displacements: np.ndarray
+    _exclude_from_json = {
+        "moment_tensor",
+        "observed_displacements",
+        "synthetic_displacements",
+    }
+
+
+class OL3Result(OL2Result):
+    """Like OL2, but solved for not only the moment tensor but also the
+    centroid."""
+
+    centroid: Tuple[float, float, float]
+
+    grid_search_candidates: List[Tuple[float, float, float]]
     """List of inputs to core_inversion that were used in the grid search.
     Elements are (lat, lon, depths) tuples."""
-    grid_search_results      = None # type: list[tuple[np.array, float]]
+    grid_search_results: List[Tuple[np.ndarray, float]]
     """List of outputs from the inversion for each point in the grid search.
     elements are (MT, misfit) tuples."""
+
+    _exclude_from_json = {
+        *OL2Result._exclude_from_json,
+        "grid_search_candidates",
+        "grid_search_results",
+    }
+
+
+class Quality(Data):
+    """Basic quality parameters of a W-Phase solution."""
+
+    azimuthal_gap: float
+    number_of_stations: float
+    number_of_channels: float
+
+
+class Event(Data):
+    """The seismic event parameters used as the first guess for an inversion."""
+
+    id: Optional[str] = None
+    depth: float
+    latitude: float
+    longitude: float
+    time: UTCDateTime
+
+
+class AntelopeMomentTensor(Data):
+    """A seismic moment tensor expressed in the format used by Antelope,
+    apparently."""
+
+    # The upper-triangular components of the moment tensor
+    tmpp: float
+    tmrp: float
+    tmrr: float
+    tmrt: float
+    tmtp: float
+    tmtt: float
+
+    scm: float
+    """Seismic moment"""
+    drmag: float
+    """Magnitude value"""
+    drmagt: str
+    """Magnitude type"""
+
+    drlat: float
+    drlon: float
+    drdepth: float
+
+    str1: float
+    dip1: float
+    rake1: float
+    str2: float
+    dip2: float
+    rake2: float
+
+    dc: Optional[float] = None
+    """Double-couple component (from 0 to 1)"""
+    clvd: Optional[float] = None
+    """Compensated linear vector dipole component (from 0 to 1)"""
+
+    auth: str
+
+
+class CentroidLocation(Data):
+    """The earthquake's location as estimated by the centroid of the waveform
+    inversion."""
+
+    depth: float
+    latitude: float
+    longitude: float
+
+
+class TimeDelayMisfits(Data):
+    array: List[float]
+    min: int
+
+
+class WPhaseResult(Data):
+    """This defines the schema of ga-wphase's final JSON output."""
+
+    Event: Event
+
+    OL1: Optional[OL1Result] = None
+    OL2: Optional[OL2Result] = None
+    OL3: Optional[OL3Result] = None
+    QualityParams: Optional[Quality] = None
+    MomentTensor: Optional[AntelopeMomentTensor] = None  # "Preferred solution"
+    Centroid: Optional[CentroidLocation] = None
+    misfits: Optional[TimeDelayMisfits] = None
+
+    WphaseResultPlots: Optional[List[Tuple[Tuple[int, int], str]]]
+    """List of waveform plots produced. Each element is a pair, with the first
+    element giving the range of trace indices included in the plot and the
+    second element giving the filename."""
+
+    Warnings: List[str] = []
+    Error: Optional[str] = None
+    StackTrace: Optional[str] = None
+    WPInvProfile: Optional[str] = None
+
+    DataSource: Optional[str] = None
+    HostName: Optional[str] = None
+
+    def add_warning(self, warning):
+        self.Warnings.append(str(warning))

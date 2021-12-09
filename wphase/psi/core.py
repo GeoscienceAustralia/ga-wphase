@@ -8,6 +8,7 @@ from collections import OrderedDict
 import sys, os, glob, traceback, logging
 from concurrent.futures import ProcessPoolExecutor
 from timeit import default_timer as timer
+from typing import Sequence
 import numpy as np
 from numpy.linalg import lstsq
 from scipy.interpolate import interp1d
@@ -15,7 +16,7 @@ from scipy.signal import triang
 from scipy import ndimage
 from scipy.signal import detrend
 import h5py
-from obspy.core import read, Stream
+from obspy.core import read, Stream, UTCDateTime
 
 try:
     from obspy.geodetics import locations2degrees
@@ -35,21 +36,28 @@ except ImportError:
 from wphase import settings
 from .greens import GreensFunctions
 from .bandpass import bandpassfilter
-from .model import OL1, OL2, OL3
+from .model import (
+    WPhaseResult,
+    OL1Result,
+    OL2Result,
+    OL3Result,
+    Event,
+    TimeDelayMisfits,
+)
 from .exceptions import InversionError, RTdeconvError
 from .seismoutils import azimuthal_gap
 
 logger = logging.getLogger(__name__)
 
 def wpinv(
-    st,
-    metadata,
-    eqINFO,
-    gfdir,
-    OL=1,
-    processes=None,
-    output_dic=None):
-    '''
+    st: Stream,
+    metadata: dict,
+    event: Event,
+    gfdir: str,
+    OL: int = 1,
+    processes: int = None,
+):
+    """
     This function is the main function that will compute the inversion. For
     details of the the algorithm and logic, see `here
     <https://pubs.er.usgs.gov/publication/70045140>`_.
@@ -116,11 +124,7 @@ def wpinv(
             #. Inversion result for each grid point in latlons
             #. Dictionary with relavant information about the data processing
                 so it can redone easily outside this function.
-    '''
-
-    if output_dic is None:
-        output_dic = {}
-
+    """
     #############Output Level 1#############################
     #############Preliminary magnitude:#####################
 
@@ -140,10 +144,10 @@ def wpinv(
     # zeros.
     Vpaz2freq = np.vectorize(paz_2_amplitude_value_of_freq_resp)
 
-    hyplat = eqINFO['lat']
-    hyplon = eqINFO['lon']
-    hypdep = eqINFO['dep']
-    orig = eqINFO['time']
+    hyplat = event.latitude
+    hyplon = event.longitude
+    hypdep = event.depth
+    orig = UTCDateTime(event.time)
 
     # Deal with extremly shallow preliminary hypocenter
     if hypdep < 10.:
@@ -314,18 +318,15 @@ def wpinv(
     logger.info("Strike:             %.1f°", pre_results['strike'])
     logger.info("Eccentricity (b/a): %.2f", pre_results['eccentricity'])
 
-    output_dic['OL1'] = {}
-    output_dic['OL1']['magnitude'] = round(pre_wp_mag,1)
-    output_dic['OL1']['nstations'] = len(accepted_traces)
-    output_dic['OL1']['used_traces'] = trlist
-
-    ol1 = OL1(
-        preliminary_magnitude=pre_wp_mag,
+    ol1 = OL1Result(
         preliminary_calc_details=pre_results,
         used_traces=trlist,
+        nstations=len(accepted_traces),
+        magnitude=round(pre_wp_mag, 1),
     )
-    if OL==1:
-        return ol1
+    result = WPhaseResult(OL1=ol1, Event=event)
+    if OL == 1:
+        return result
     #############  Output Level 2    #######################################
     #############  Moment Tensor based on preliminary hypercenter (PDE) ####
     # Much of what follows is the same as what was done above, but we will be
@@ -474,8 +475,8 @@ def wpinv(
         misfits = list(pool.map(get_timedelay_misfit_wrapper,inputs))
 
     # Set t_d (time delay) and and t_h (half duration) to optimal values:
-    mis_min =  np.array(misfits).argmin()
-    output_dic['misfits'] = {'min':mis_min, 'array':misfits}
+    mis_min = int(np.array(misfits).argmin())
+    result.misfits = TimeDelayMisfits(array=misfits, min=mis_min)
     t_d = t_h = time_delays[mis_min]
     MRF = MomentRateFunction(t_h, dt)
     logger.info("Source time function, time delay: %d, %f", len(MRF), t_d)
@@ -507,7 +508,6 @@ def wpinv(
             trlen)
 
         if len(trlist) < settings.MINIMUM_FITTING_CHANNELS:
-            output_dic.pop('OL1', None)
             msg = "Only {} channels with possibly acceptable fits. Aborting.".format(len(trlist))
             logger.error(msg)
             raise InversionError(msg)
@@ -529,29 +529,26 @@ def wpinv(
            M[3]*GFmatrix[:,2] + M[4]*GFmatrix[:,3] +
            M[5]*GFmatrix[:,4])
 
-    logger.info("OL2:")
 
     trace_lengths = list(zip(trlist, trlen))
-    output_dic['OL2'] = MT_result(M, misfit, hypdep, t_d,
-                                  trace_lengths=dict(trace_lengths))
-
-    ol2 = OL2(
-        preliminary_magnitude=pre_wp_mag,
-        preliminary_calc_details=pre_results,
+    result.OL2 = make_result(
+        OL2Result,
+        M,
+        misfit=misfit,
+        depth=hypdep,
+        time_delay=t_d,
         used_traces=trlist,
         moment_tensor=M,
         observed_displacements=observed_displacements,
         synthetic_displacements=syn,
         trace_lengths=OrderedDict(trace_lengths),
     )
-    if OL==2:
-        return ol2
-    else:
-        output_dic['OL2']['M'] = M
 
     if len(trlen) == 0:
         logger.warning("Could not calculate OL3: no data within tolerance")
-        return ol2
+        return result
+    elif OL == 2:
+        return result
 
     #############  Output Level 3   #############################
     ###Moment Tensor based on grid search  ######################
@@ -608,24 +605,22 @@ def wpinv(
 
     trace_lengths = list(zip(trlist, trlen))
 
-    logger.info("OL3:")
-    output_dic['OL3'] = MT_result(M, misfit, cendep, t_d,
-                                  trace_lengths=dict(trace_lengths))
-
-    cenloc = (cenlat,cenlon,cendep)
-    return OL3(
-        preliminary_magnitude=pre_wp_mag,
-        preliminary_calc_details=pre_results,
+    result.OL3 = make_result(
+        OL3Result,
+        M,
+        misfit=misfit,
+        depth=cendep,
+        time_delay=t_d,
+        centroid=(cenlat, cenlon, cendep),
         used_traces=trlist,
         moment_tensor=M,
         observed_displacements=observed_displacements,
         synthetic_displacements=syn,
         trace_lengths=OrderedDict(trace_lengths),
-        centroid=cenloc,
-        time_delay=t_d,
         grid_search_candidates=[row[1] for row in grid_search_inputs],
         grid_search_results=grid_search_results,
     )
+    return result
 
 
 def MomentRateFunction(t_h, dt):
@@ -1310,28 +1305,46 @@ def ltrim(data, starttime, delta):
     else:
         return data[..., i_of:]
 
-def MT_result(M, misfit, depth, t_d, **extra):
-    logger.info("%5s % 10s % 10s % 10s", "",  "r",  "t",  "p")
+
+def make_result(cls, M: Sequence[float], misfit: float, **extra):
+    """Given a moment tensor, print some pretty log messages describing it and
+    convert it to a standard result object.
+
+    Parameters
+    ----------
+    cls :
+        Result class to construct: OL2Result or OL3Result
+    M :
+        Moment tensor as a 6-element list
+    misfit :
+        Inversion misfit as a percentage
+    extra :
+        Extra args to pass to the result constructor
+
+    Return
+    ------
+    OL2Result
+    """
+    logger.info("%s Result:" % cls.__name__)
+    logger.info("%5s % 10s % 10s % 10s", "", "r", "t", "p")
     logger.info("%5s %+.3e %+.3e %+.3e", "r", M[0], M[3], M[4])
     logger.info("%5s % 10s %+.3e %+.3e", "t", "",   M[1], M[5])
     logger.info("%5s % 10s % 10s %+.3e", "p", "",   "",   M[2])
     logger.info("misfit: %.0f%%", misfit)
-    M2 = M*M
+    M2 = np.asarray(M) ** 2
     m0 = np.sqrt(0.5 * (M2[0] + M2[1] + M2[2]) + M2[3] + M2[4] + M2[5])
     mag = 2./3.*(np.log10(m0)-9.10)
     logger.info("m0: % e", m0)
     logger.info("magnitude: %.5f", mag)
-    return {
-        'Mrr': M[0],
-        'Mtt': M[1],
-        'Mpp': M[2],
-        'Mrt': M[3],
-        'Mrp': M[4],
-        'Mtp': M[5],
-        'misfit': misfit,
-        'm0': m0,
-        'magnitude': round(mag, 1),
-        'depth': depth,
-        'time_delay': t_d,
-        **extra
-    }
+    return cls(
+        Mrr=M[0],
+        Mtt=M[1],
+        Mpp=M[2],
+        Mrt=M[3],
+        Mrp=M[4],
+        Mtp=M[5],
+        misfit=misfit,
+        m0=m0,
+        magnitude=round(mag, 1),
+        **extra,
+    )

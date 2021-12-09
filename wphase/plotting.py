@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
-'''Functions to plot 
-Some utilities to make nice plots.
-'''
+"""Some utilities to make nice plots."""
 from __future__ import absolute_import, print_function
 import os
 
@@ -165,7 +163,7 @@ def plot_preliminary_fit(eqinfo, strike, average_amplitude, anisotropy,
     ax = fig.add_subplot(111)
     title = 'Preliminary Magnitude Fit'
     try:
-        title += ' for %s' % eqinfo['id']
+        title += ' for %s' % eqinfo.id
     except Exception:
         pass
     ax.set_title(title)
@@ -219,12 +217,11 @@ class WaveformPlot(object):
                 format=fmt,
                 bbox_inches='tight')
 
-class MakeWaveformPlots(object):
+
+class MultiWaveformPlotter(object):
     def __init__(self, folder, prefix, syn, obs, traces):
         """
         Helper class used by plot_waveforms.
-
-        This is achieved by constructing an instance of this class.
 
         :param folder: The folder to write the plots to.
         :param prefix: Prefix for file names.
@@ -238,22 +235,30 @@ class MakeWaveformPlots(object):
         self.prefix = prefix
         self.syn = syn
         self.obs = obs
+        self.traces = traces
         self.n_traces = len(traces)
         self.all_traces = WaveformPlot(prefix)
         self.images = []
-        self.images.append(((1, self.n_traces), prefix + '.png'))
         self.n_traces_in_curr = 0
+        self.n_subplots_done = 0
+        self.curr_sub_plot = None
+
+    def plot(self):
+        self.images.append(((1, self.n_traces), self.prefix + ".png"))
         if self.n_traces > settings.N_TRACES_PER_RESULT_PLOT:
-            self.n_subplots_done = 0
             self.start_next_plot(0)
-        else:
-            self.curr_sub_plot = None
 
         # generate the plots
         offset = 0
-        for trid, trlen in traces.items():
+        for trid, trlen in self.traces.items():
             offset += trlen
             self.add_tick(offset, trid.split('.')[1])
+
+        self.all_traces.save_image(self.folder, self.syn, self.obs, ["png"])
+        if self.curr_sub_plot is not None and self.n_traces_in_curr:
+            self.save_curr_subplot(len(self.syn))
+
+        return self.images
 
     def add_tick(self, tick_pos, label):
         """
@@ -271,10 +276,11 @@ class MakeWaveformPlots(object):
         """
         Save the plot for a subset of traces.
         """
-        slc = slice(self.start_index, end_index)
-        self.curr_sub_plot.save_image(self.folder, self.syn[slc], self.obs[slc])
-        self.images.append((self.next_plot_range, self.curr_sub_plot.name + '.png'))
-        self.n_subplots_done += 1
+        if self.curr_sub_plot:
+            slc = slice(self.start_index, end_index)
+            self.curr_sub_plot.save_image(self.folder, self.syn[slc], self.obs[slc])
+            self.images.append((self.next_plot_range, self.curr_sub_plot.name + ".png"))
+            self.n_subplots_done += 1
 
     def start_next_plot(self, end_index):
         """
@@ -288,14 +294,6 @@ class MakeWaveformPlots(object):
         self.next_plot_range = (first, last)#'{} to {}'.format(first, last)
         self.curr_sub_plot = WaveformPlot('{}_{}_{}'.format(self.prefix, first, last))
 
-    def __del__(self):
-        """
-        Save the plots of all traces and the last set of traces.
-        """
-        self.all_traces.save_image(self.folder, self.syn, self.obs, ['png'])
-        if self.curr_sub_plot is not None and self.n_traces_in_curr:
-            self.save_curr_subplot(len(self.syn))
-        wphase_output[settings.RESULTS_PLOTS_KEY] = self.images
 
 def plot_waveforms(folder, prefix, syn, obs, traces):
     """Plot synthetic vs observed waveforms.
@@ -310,4 +308,4 @@ def plot_waveforms(folder, prefix, syn, obs, traces):
     :param traces:
         An OrderedDict mapping station names to the number of
         samples in the corresponding waveforms."""
-    MakeWaveformPlots(folder, prefix, syn, obs, traces)
+    return MultiWaveformPlotter(folder, prefix, syn, obs, traces).plot()

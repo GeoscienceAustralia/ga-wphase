@@ -30,7 +30,7 @@ else:
 
 setup(
     name = 'Wphase',
-    version = '0.2',
+    version = '0.3beta1',
     packages = ['wphase', 'wphase.psi'],
     author = 'Geoscience Austraila',
     description = 'Wphase calculations and web interface.',
@@ -52,6 +52,7 @@ setup(
         'matplotlib', # obspy imports this anyway, so we don't relegate it to [plotting]
         'numpy',
         'obspy',
+        'pydantic',
         'pyinstrument==0.13.1',
         'pytest',
         'scipy>=0.16.0',

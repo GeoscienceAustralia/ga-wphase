@@ -1,8 +1,4 @@
-from __future__ import absolute_import, print_function
-
-from future import standard_library
-standard_library.install_aliases()
-from builtins import range
+from wphase.psi.model import Event
 
 import logging
 import pickle as pickle
@@ -105,7 +101,7 @@ def build_metadata_dict(
 
 
 def get_waveforms(
-        eqinfo,
+        eqinfo: Event,
         META,
         wp_tw_factor=15,
         t_beforeP=1500., # seconds
@@ -125,7 +121,7 @@ def get_waveforms(
     perform a WP inversion.
 
     :param float wp_tw_factor: Defines the Wphase time window. this is used as
-        :math:`[t_p, t_p + wp\_tw\_factor \Delta]`.
+        :math:`[t_p, t_p + wp_tw_factor Delta]`.
     :param float dist_range: A pair of floats specifying the min/max epicentral
         distance (in degrees) to be considered; i.e. stations outside of this
         range will be excluded.
@@ -149,18 +145,13 @@ def get_waveforms(
         If *add_ptime* is *False* return the stream only.
     '''
 
-    hyplat = eqinfo['lat']
-    hyplon = eqinfo['lon']
-    hypdep = eqinfo['dep']
-    otime = eqinfo['time']
-
     # Obtaining stations within the distance range only. trlist_in_dist_range will contain
     # the ids of channels which are within the specified distance range.
     trlist_in_dist_range = []
     tr_dists_in_range = []
     for trid, stmeta in META.items():
-        stlat, stlon = stmeta['latitude'], stmeta['longitude']
-        dist = locations2degrees(hyplat, hyplon, stlat, stlon)
+        stlat, stlon = stmeta["latitude"], stmeta["longitude"]
+        dist = locations2degrees(eqinfo.latitude, eqinfo.longitude, stlat, stlon)
         if dist >= dist_range[0] and dist <= dist_range[1]:
             trlist_in_dist_range.append(trid)
             tr_dists_in_range.append(dist)
@@ -182,8 +173,8 @@ def get_waveforms(
         for i_trid, trid in enumerate(trlist_in_dist_range):
             stmeta = META[trid]
             dist = tr_dists_in_range[i_trid]
-            t_p = getPtime(dist, hypdep)
-            t_p_UTC = otime + t_p
+            t_p = getPtime(dist, eqinfo.depth)
+            t_p_UTC = eqinfo.time + t_p
             t_wp_end = wp_tw_factor*dist
             t_wp_end_UTC = t_p_UTC + t_wp_end
             t1 = t_p_UTC - t_beforeP

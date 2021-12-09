@@ -38,7 +38,7 @@ if not WPHASE_HOST_NAME:
 PROFILE_WPHASE = os.environ.get('WPHASE_PROFILE', 'false').lower() in ('1', 'true')
 
 #: Number of traces to put in each wphase results plot
-N_TRACES_PER_RESULT_PLOT = os.environ.get('WPHASE_N_TRACES_PER_RESULT_PLOT', 6)
+N_TRACES_PER_RESULT_PLOT = int(os.environ.get('WPHASE_N_TRACES_PER_RESULT_PLOT', 6))
 
 #: Implementation of bandpass filter to use
 BANDPASS_IMPLEMENTATION = os.environ.get('WPHASE_BANDPASS_IMPLEMENTATION', 'scipy')
@@ -115,34 +115,3 @@ WPHASE_MISFIT_PREFIX = "wphase_misfit"
 
 #: Prefix for the names of the images containing the preliminary magnitude fit
 WPHASE_PRELIM_FIT_PREFIX = "preliminary_magnitude_fit"
-
-
-### The remaining settings should probably not be changed - they define the
-### structure of the w-phase results JSON.
-
-#: Key for warnings in the result dictionary.
-WPHASE_WARNINGS_KEY = 'Warnings'
-
-#: Key for the wphase processing error.
-WPHASE_ERROR_KEY = 'Error'
-
-#: Key for the wphase event description.
-WPHASE_EVENT_KEY = 'Event'
-
-#: Key containing the stack trace.
-WPHASE_ERROR_STACKTRACE_KEY = 'StackTrace'
-
-#: Key for the list of wphase results plots.
-RESULTS_PLOTS_KEY = 'WphaseResultPlots'
-
-#: Key for the data source.
-WPHASE_DATA_SOURCE_KEY = 'DataSource'
-
-#: Key containing the wpinv profiling output.
-WPINV_PROFILE_OUTPUT_KEY = 'WPInvProfile'
-
-#: Key containing the misfits.
-MISFIT_KEY = 'Misfits'
-
-#: Key containing the host name.
-HOST_NAME_KEY = 'HostName'

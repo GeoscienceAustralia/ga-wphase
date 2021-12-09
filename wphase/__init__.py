@@ -2,11 +2,9 @@
 
 import os
 import errno
-import json
 import logging
 
-import numpy as np
-
+from wphase.psi import model
 
 try:
     # to avoid: Exception _tkinter.TclError
@@ -16,7 +14,6 @@ except Exception:
     pass
 
 from . import settings
-from .result import jsonencode_np
 from ._runner_fdsn import runwphase as wphase_runner
 
 logger = logging.getLogger(__name__)
@@ -27,9 +24,8 @@ def runwphase(
     greens_functions_dir = settings.GREEN_DIR,
     n_workers_in_pool = settings.N_WORKERS_IN_POOL,
     processing_level = 3,
-    stations_to_exclude = None,
     output_dir_can_exist = False,
-    **kwargs):
+    **kwargs) -> model.WPhaseResult:
     """
     Run wphase.
 
@@ -40,7 +36,6 @@ def runwphase(
         :py:data:`wphase.settings.N_WORKERS_IN_POOL`) specifies as many as is
         reasonable'.
     :param processing_level: Processing level.
-    :param stations_to_exclude: List of station identifiers to exclude.
     :param output_dir_can_exist: Can the output directory already exist?
     """
 
@@ -62,21 +57,25 @@ def runwphase(
         greens_functions_dir,
         n_workers_in_pool,
         processing_level,
-        stations_to_exclude,
-        output_dir_can_exist,
         **kwargs)
 
-    wphase_results[settings.HOST_NAME_KEY] = settings.WPHASE_HOST_NAME
-    wphase_results[settings.WPHASE_DATA_SOURCE_KEY] = server if server else "local files"
+    wphase_results.HostName = settings.WPHASE_HOST_NAME
+    wphase_results.DataSource = server if server else "local files"
 
     # save the results if output_dir provided
     if output_dir:
-        with open(os.path.join(output_dir, settings.WPHASE_OUTPUT_FILE_NAME), 'w') as out:
-            json.dump(wphase_results, out, default=jsonencode_np)
+        try:
+            # TODO: Should this be done in runwphase?
+            with open(os.path.join(output_dir,settings.WPHASE_OUTPUT_FILE_NAME), 'w') as of:
+                print(wphase_results.json(indent=2), file=of)
+        except Exception as e:
+            # not sure how we would get here, but we just don't want
+            # to stop the rest of processing
+            logger.exception("Failed dumping result to JSON.")
 
     # re-raise any errors from the dark side
-    if settings.WPHASE_ERROR_KEY in wphase_results:
-        raise Exception(wphase_results[settings.WPHASE_ERROR_STACKTRACE_KEY])
+    if wphase_results.Error:
+        raise Exception(wphase_results.StackTrace)
 
     return wphase_results
 

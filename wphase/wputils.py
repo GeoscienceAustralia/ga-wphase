@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import
-from future import standard_library
-standard_library.install_aliases()
 import os
 import logging
 import numpy as np
+from typing import Optional
 from collections import defaultdict
 from traceback import format_exc
 
@@ -30,61 +28,108 @@ from wphase.plotting import (
     plot_station_coverage,
     plot_waveforms,
 )
-from wphase.psi.model import OL1, OL2, OL3
+from wphase.psi import model
 from wphase import settings
 
 logger = logging.getLogger(__name__)
 
 
-if settings.PROFILE_WPHASE:
-    try:
-        # If we can import pyinstrument imported, then profile
-        from pyinstrument import Profiler
-        class WPInvProfiler(object):
-            def __init__(self, wphase_output, working_dir):
-                self.wphase_output = wphase_output
-                self.working_dir = working_dir
+try:
+    # If we can import pyinstrument imported, then profile
+    from pyinstrument import Profiler
 
-            def __enter__(self):
-                self.profiler = Profiler() # or Profiler(use_signal=False), see below
-                self.profiler.start()
-
-            def __exit__(self, exc_type, esc_value, traceback):
-                self.profiler.stop()
-                self.wphase_output[settings.WPINV_PROFILE_OUTPUT_KEY] = \
-                    self.profiler.output_html()
-                if self.working_dir is not None:
-                    with open(os.path.join(self.working_dir, 'timings.html'), 'w') as timings_file:
-                        timings_file.write(self.profiler.output_html())
-
-    except Exception:
-        import cProfile, pstats, io
-        class WPInvProfiler(object):
-            def __init__(self, wphase_output, *args, **kwargs):
-                self.wphase_output = wphase_output
-                self.sort_by = 'cumulative'#'tottime'
-
-            def __enter__(self):
-                self.profiler = cProfile.Profile()
-                self.profiler.enable()
-
-            def __exit__(self, exc_type, esc_value, traceback):
-                self.profiler.disable()
-                s = io.StringIO()
-                ps = pstats.Stats(self.profiler, stream=s).sort_stats(self.sort_by)
-                ps.print_stats()
-                self.wphase_output[settings.WPINV_PROFILE_OUTPUT_KEY] = {
-                    'css':'',
-                    'js':'',
-                    'body':'<pre>{}</pre>'.format(s.getvalue())}
-else:
     class WPInvProfiler(object):
-        def __init__(self, *args, **kwargs): pass
-        def __enter__(self): pass
-        def __exit__(self, exc_type, esc_value, traceback): pass
+        """WPInvProfiler."""
+
+        def __init__(self, working_dir=None):
+            """__init__.
+
+            Parameters
+            ----------
+            working_dir :
+                working_dir
+            """
+            self.html = None
+            self.working_dir = working_dir
+
+        def __enter__(self):
+            """__enter__."""
+            self.profiler = Profiler()  # or Profiler(use_signal=False), see below
+            self.profiler.start()
+
+        def __exit__(self, exc_type, esc_value, traceback):
+            """__exit__.
+
+            Parameters
+            ----------
+            exc_type :
+                exc_type
+            esc_value :
+                esc_value
+            traceback :
+                traceback
+            """
+            self.profiler.stop()
+            self.html = self.profiler.output_html()
+            if self.working_dir is not None:
+                with open(
+                    os.path.join(self.working_dir, "timings.html"), "w"
+                ) as timings_file:
+                    timings_file.write(self.profiler.output_html())
 
 
+except Exception:
+    import cProfile, pstats, io
 
+    class WPInvProfiler(object):
+        """WPInvProfiler."""
+
+        def __init__(self, *args, **kwargs):
+            """__init__.
+
+            Parameters
+            ----------
+            args :
+                args
+            kwargs :
+                kwargs
+            """
+            self.html = None
+            self.sort_by = "cumulative"  #'tottime'
+
+        def __enter__(self):
+            """__enter__."""
+            self.profiler = cProfile.Profile()
+            self.profiler.enable()
+
+        def __exit__(self, exc_type, esc_value, traceback):
+            """__exit__.
+
+            Parameters
+            ----------
+            exc_type :
+                exc_type
+            esc_value :
+                esc_value
+            traceback :
+                traceback
+            """
+            self.profiler.disable()
+            s = io.StringIO()
+            ps = pstats.Stats(self.profiler, stream=s).sort_stats(self.sort_by)
+            ps.print_stats()
+            self.html = "<pre>{}</pre>".format(s.getvalue())
+
+
+class NoProfiler(object):
+    def __init__(self, *args, **kwargs):
+        self.html = None
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, esc_value, traceback):
+        pass
 
 
 class OutputDict(defaultdict):
@@ -113,13 +158,12 @@ class OutputDict(defaultdict):
         """
         Add a the warning message given by *msg*.
 
-        Warnings are accumulated in a list under the key
-        :py:data:`wphase.settings.WPHASE_WARNINGS_KEY`.
+        Warnings are accumulated in a list under the key "Warnings"
         """
 
-        if settings.WPHASE_WARNINGS_KEY not in self:
-            self[settings.WPHASE_WARNINGS_KEY] = []
-        self[settings.WPHASE_WARNINGS_KEY].append(msg)
+        if "Warnings" not in self:
+            self["Warnings"] = []
+        self["Warnings"].append(msg)
 
     def as_dict(self, item=None):
         if item is None:
@@ -129,10 +173,7 @@ class OutputDict(defaultdict):
         return item
 
 
-
-
-
-def wpinv_for_eatws(M, cenloc):
+def convert_to_antelope(M, cenloc):
     """
     Convert Roberto's wphase output to antelope's moment tensor format.
     Plus calculate a few values based on the moment tensor.
@@ -141,14 +182,14 @@ def wpinv_for_eatws(M, cenloc):
     :param cenloc: The centroid location, (cenlat,cenlon,cendep)
     :return: antelope's moment tensor info in a dictionary.
     """
-    M2 = M*M
+    M2 = np.asarray(M)**2
     m0 = np.sqrt(0.5*(M2[0]+M2[1]+M2[2])+M2[3]+M2[4]+M2[5])
     mag = 2./3.*(np.log10(m0)-9.10)
 
     np1 = mt2plane(MomentTensor(M, 0))
     np2 = aux_plane(np1.strike, np1.dip, np1.rake)
 
-    results = dict(
+    results = model.AntelopeMomentTensor(
         tmpp=M[2],
         tmrp=M[4],
         tmrr=M[0],
@@ -176,9 +217,7 @@ def wpinv_for_eatws(M, cenloc):
     )
 
     try:
-        DC, CLVD = decomposeMT(M)
-        results['dc'] = DC
-        results['clvd'] = CLVD
+        results.dc, results.clvd = decomposeMT(M)
     except Exception:
         import traceback
         logger.warning("Error computing DC/CLVD decomposition: %s",
@@ -202,80 +241,82 @@ def plot_and_save_beachball(M, working_dir, OL):
 
 
 def post_process_wpinv(
-    res,
-    wphase_output,
+    output: model.WPhaseResult,
     WPOL,
     working_dir,
-    eqinfo,
+    eqinfo: model.Event,
     metadata,
     make_maps=True,
     make_plots=True):
+    traces = None
+    MT = None
+    mtResult: Optional[model.OL2Result] = output.OL3 or output.OL2
 
-    prelim = res.preliminary_calc_details
-
-    if prelim:
-        fname = os.path.join(working_dir, settings.WPHASE_PRELIM_FIT_PREFIX) + '.png'
+    if output.OL1:
+        traces = output.OL1.used_traces
+        prelim = output.OL1.preliminary_calc_details
+        fname = os.path.join(working_dir, settings.WPHASE_PRELIM_FIT_PREFIX) + ".png"
         plot_preliminary_fit(eqinfo, filename=fname, **prelim)
     else:
         logger.warning("Could not find preliminary calculation details in result.")
 
-    traces = res.used_traces
-    M = None
-    if isinstance(res, OL2):
-        wphase_output['QualityParams'] = dict(
+    if mtResult:
+        MT = mtResult.moment_tensor
+        traces = mtResult.used_traces
+        output.QualityParams = model.Quality(
             azimuthal_gap=azimuthal_gap(
-                get_azimuths(metadata, traces, (eqinfo['lat'], eqinfo['lon']))
+                get_azimuths(metadata, traces, (eqinfo.latitude, eqinfo.longitude))
             ),
-            number_of_stations=len(set(trid.split('.')[1] for trid in traces)),
+            number_of_stations=len(set(trid.split(".")[1] for trid in traces)),
             number_of_channels=len(traces),
         )
 
-        obs = res.observed_displacements
-        syn = res.synthetic_displacements
-        M = wphase_output['OL2'].pop('M')
+        if make_plots and len(traces) > 0:
+            output.WphaseResultPlots = plot_waveforms(
+                working_dir,
+                settings.WPHASE_RESULTS_TRACES_PREFIX,
+                mtResult.synthetic_displacements,
+                mtResult.observed_displacements,
+                mtResult.trace_lengths,
+            )
 
-        if make_plots:
-            try:
-                plot_and_save_beachball(M, working_dir, OL=2)
-            except Exception:
-                wphase_output.add_warning("Failed to create beachball for OL2. {}"
-                                          .format(format_exc()))
-            if len(traces) > 0:
-                plot_waveforms(
-                    working_dir,
-                    settings.WPHASE_RESULTS_TRACES_PREFIX,
-                    syn,
-                    obs,
-                    res.trace_lengths)
+        else:
+            output.add_warning(
+                "Could not create wphase waveforms plot - no traces to plot!"
+            )
 
-            else:
-                wphase_output.add_warning('Could not create wphase waveforms plot - no traces to plot!')
+    if make_plots and output.OL2 is not None:
+        try:
+            plot_and_save_beachball(output.OL2.moment_tensor, working_dir, OL=2)
+        except Exception:
+            output.add_warning(
+                "Failed to create beachball for OL2. {}".format(format_exc())
+            )
 
+    if make_plots and output.OL3 is not None:
+        try:
+            plot_and_save_beachball(output.OL3.moment_tensor, working_dir, OL=3)
+        except Exception:
+            output.add_warning(
+                "Failed to create beachball for OL3. {}".format(format_exc())
+            )
 
-    if isinstance(res, OL3):
-        M = res.moment_tensor
-        cenloc = res.centroid
+    if isinstance(mtResult, model.OL3Result):
+        cenloc = mtResult.centroid
 
-        results = wpinv_for_eatws(M, cenloc)
-        wphase_output['MomentTensor'] = results
+        output.MomentTensor = convert_to_antelope(MT, cenloc)
 
         # Only 3 has cenloc...
-        wphase_output['Centroid'] = {}
-        wphase_output['Centroid']['depth'] = round(cenloc[2],1)
-        wphase_output['Centroid']['latitude'] = round(cenloc[0],3)
-        wphase_output['Centroid']['longitude'] = round(cenloc[1],3)
-
-        if make_plots:
-            try:
-                plot_and_save_beachball(M, working_dir, OL=3)
-            except Exception:
-                wphase_output.add_warning("Failed to create beachball for OL3. {}"
-                                          .format(format_exc()))
+        output.Centroid = model.CentroidLocation(
+            depth=round(cenloc[2], 1),
+            latitude=round(cenloc[0], 3),
+            longitude=round(cenloc[1], 3),
+        )
 
         if make_maps:
             # draw the grid search plot
-            coords = np.asarray(res.grid_search_candidates)
-            misfits = np.array([x[1] for x in res.grid_search_results])
+            coords = np.asarray(mtResult.grid_search_candidates)
+            misfits = np.array([x[1] for x in mtResult.grid_search_results])
             N_grid = len(misfits)
             lats, lons, depths = coords.T
             depths_unique  = sorted(set(depths))
@@ -296,7 +337,7 @@ def post_process_wpinv(
 
             gridSearchPrefix = os.path.join(working_dir, settings.WPHASE_GRID_SEARCH_PREFIX)
             plot_grid_search(
-                (eqinfo['lon'], eqinfo['lat']),
+                (eqinfo.longitude, eqinfo.latitude),
                 (cenloc[1], cenloc[0]),
                 latlon_depth_grid,
                 scaled_field,
@@ -306,21 +347,19 @@ def post_process_wpinv(
                 filename=gridSearchPrefix
             )
 
-    if make_maps:
+    if traces and make_maps:
         try:
             # Make a plot of the station distribution
-            hyplat = eqinfo['lat']
-            hyplon = eqinfo['lon']
             lats = [metadata[trid]['latitude'] for trid in traces]
             lons = [metadata[trid]['longitude'] for trid in traces]
             stationDistPrefix = os.path.join(
                 working_dir,
                 settings.WPHASE_STATION_DISTRIBUTION_PREFIX)
             plot_station_coverage(
-                (hyplat,hyplon),
+                (eqinfo.latitude, eqinfo.longitude),
                 lats,
                 lons,
-                mt=M,
+                mt=MT,
                 filename=stationDistPrefix + '.png')
         except Exception:
             wphase_output.add_warning("Failed to create station distribution plot. {}".format(format_exc()))

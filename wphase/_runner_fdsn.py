@@ -12,9 +12,9 @@ from obspy.core.inventory import Inventory
 from obspy.core.utcdatetime import UTCDateTime
 
 import wphase.settings as settings
+from wphase.data_acquisition import build_metadata_dict, get_waveforms
 from wphase.psi.core import wpinv
 from wphase.psi.exceptions import InversionError
-from wphase.psi.inventory import build_metadata_dict, get_waveforms
 from wphase.psi.model import Event, WPhaseResult
 from wphase.wputils import (NoProfiler, OutputDict, WPInvProfiler,
                             post_process_wpinv)

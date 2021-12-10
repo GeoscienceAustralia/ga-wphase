@@ -259,7 +259,7 @@ def remove_gappy_traces(st):
     We do this by first merging, then looking for duplicate waveformStreamIDs."""
     try:
         st = st.merge(fill_value='interpolate')
-    except Exception as e:
+    except Exception as e: # pylint: disable=broad-except
         # If there are traces with the same stream ID but different sampling
         # rates, Stream.merge() throws a raw Exception!
         logger.warning("Failed to merge traces: %s", e)

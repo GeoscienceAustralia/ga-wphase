@@ -2,7 +2,7 @@
 import logging
 import os.path
 
-from future.utils import raise_from
+from functools import lru_cache
 
 import h5py
 import numpy as np
@@ -10,10 +10,6 @@ import obspy
 
 logger = logging.getLogger(__name__)
 
-try:
-    from functools import lru_cache
-except ImportError:
-    from backports.functools_lru_cache import lru_cache
 
 # We follow Kanamori & Rivera in using spherical coordinates r, theta, phi
 # where r is vertical, theta is latitude and phi is longitude.
@@ -88,7 +84,7 @@ class GreensFunctions(object):
                 (hdir, mt_component, dist, wf_component)
             ) * self.gf_unit_Nm
         except Exception as e:
-            raise_from(KeyError(tup), e)
+            raise KeyError(tup) from e
 
     def select(self, wf_component, dist, depth):
         """Retrieves the raw Greens functions for the given distance, depth and

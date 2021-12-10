@@ -45,8 +45,8 @@ setup(
             'wphase/psi/ttimes_subrout.f',
             'wphase/psi/libtau.f'])
     ],
+    python_requires = '>=3.6.0',
     install_requires = [
-        'backports.functools_lru_cache; python_version < "3.0.0"',
         'future',
         'h5py',
         'matplotlib', # obspy imports this anyway, so we don't relegate it to [plotting]

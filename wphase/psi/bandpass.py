@@ -4,10 +4,7 @@ from __future__ import absolute_import
 from scipy import signal
 from wphase import settings
 
-try:
-    from functools import lru_cache
-except ImportError:
-    from backports.functools_lru_cache import lru_cache
+from functools import lru_cache
 
 # The filter design stage is somewhat expensive, so we cache the results
 @lru_cache(maxsize=None)

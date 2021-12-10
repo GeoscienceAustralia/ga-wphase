@@ -11,7 +11,7 @@ from obspy.clients.fdsn import Client
 from obspy.core.inventory import Inventory
 from obspy.core.utcdatetime import UTCDateTime
 
-import wphase.settings as settings
+from wphase import settings
 from wphase.data_acquisition import build_metadata_dict, get_waveforms
 from wphase.psi.core import wpinv
 from wphase.psi.exceptions import InversionError
@@ -148,8 +148,8 @@ def load_metadata(
 def runwphase(
         output_dir,
         server = None,
-        greens_functions_dir = settings.GREEN_DIR,
-        n_workers_in_pool = settings.N_WORKERS_IN_POOL,
+        greens_functions_dir = settings.GREENS_FUNCTIONS,
+        n_workers_in_pool = settings.WORKER_COUNT,
         processing_level = 3,
         networks = 'II,IU',
         eqinfo: Event = None,
@@ -180,7 +180,7 @@ def runwphase(
         RELATIVE PATHS**.
     :param greens_functions_dir: The Green data Directory.
     :param n_workers_in_pool: Number of processors to use, (default
-        :py:data:`wphase.settings.N_WORKERS_IN_POOL`) specifies as many as is
+        :py:data:`wphase.settings.WORKER_COUNT`) specifies as many as is
         reasonable'.
     :param processing_level: Processing level.
     """
@@ -251,7 +251,7 @@ def runwphase(
                 pickle.dump((meta_t_p, streams), pkle)
 
         # do and post-process the inversion
-        profiler = WPInvProfiler(output_dir) if settings.PROFILE_WPHASE else NoProfiler()
+        profiler = WPInvProfiler(output_dir) if settings.PROFILE else NoProfiler()
         with profiler:
             with LogCapture(logger, logging.WARNING) as capture:
                 try:

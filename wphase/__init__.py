@@ -13,16 +13,19 @@ try:
 except Exception:
     pass
 
-from . import settings
+logger = logging.getLogger(__name__)
+
+from . import settings_schema
+settings = settings_schema.WPhaseSettings()
+
 from ._runner_fdsn import runwphase as wphase_runner
 
-logger = logging.getLogger(__name__)
 
 def runwphase(
     output_dir = None,
     server = None,
-    greens_functions_dir = settings.GREEN_DIR,
-    n_workers_in_pool = settings.N_WORKERS_IN_POOL,
+    greens_functions_dir = settings.GREENS_FUNCTIONS,
+    n_workers_in_pool = settings.WORKER_COUNT,
     processing_level = 3,
     output_dir_can_exist = False,
     **kwargs) -> model.WPhaseResult:
@@ -33,7 +36,7 @@ def runwphase(
     :param output_dir: Full file path to the output directory. **DO NOT USE
         RELATIVE PATHS**.
     :param n_workers_in_pool: Number of processors to use, (default
-        :py:data:`wphase.settings.N_WORKERS_IN_POOL`) specifies as many as is
+        :py:data:`wphase.settings.WORKER_COUNT`) specifies as many as is
         reasonable'.
     :param processing_level: Processing level.
     :param output_dir_can_exist: Can the output directory already exist?
@@ -59,14 +62,14 @@ def runwphase(
         processing_level,
         **kwargs)
 
-    wphase_results.HostName = settings.WPHASE_HOST_NAME
+    wphase_results.HostName = settings.HOST_NAME
     wphase_results.DataSource = server if server else "local files"
 
     # save the results if output_dir provided
     if output_dir:
         try:
             # TODO: Should this be done in runwphase?
-            with open(os.path.join(output_dir,settings.WPHASE_OUTPUT_FILE_NAME), 'w') as of:
+            with open(os.path.join(output_dir,settings.OUTPUT_FILE_NAME), 'w') as of:
                 print(wphase_results.json(indent=2), file=of)
         except Exception as e:
             # not sure how we would get here, but we just don't want

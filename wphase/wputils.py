@@ -213,7 +213,7 @@ def convert_to_antelope(M, cenloc):
         dip2=np2[1],
         rake2=np2[2],
 
-        auth=settings.GA_AUTHORITY,
+        auth=settings.AUTHORITY,
     )
 
     try:
@@ -229,7 +229,7 @@ def convert_to_antelope(M, cenloc):
 def plot_and_save_beachball(M, working_dir, OL):
     beachBallPrefix = os.path.join(
         working_dir,
-        settings.WPHASE_BEACHBALL_PREFIX
+        settings.BEACHBALL_PREFIX
     )
     plot_beachball(
         M,
@@ -255,7 +255,7 @@ def post_process_wpinv(
     if output.OL1:
         traces = output.OL1.used_traces
         prelim = output.OL1.preliminary_calc_details
-        fname = os.path.join(working_dir, settings.WPHASE_PRELIM_FIT_PREFIX) + ".png"
+        fname = os.path.join(working_dir, settings.PRELIM_FIT_PREFIX) + ".png"
         plot_preliminary_fit(eqinfo, filename=fname, **prelim)
     else:
         logger.warning("Could not find preliminary calculation details in result.")
@@ -274,7 +274,7 @@ def post_process_wpinv(
         if make_plots and len(traces) > 0:
             output.WphaseResultPlots = plot_waveforms(
                 working_dir,
-                settings.WPHASE_RESULTS_TRACES_PREFIX,
+                settings.RESULTS_TRACES_PREFIX,
                 mtResult.synthetic_displacements,
                 mtResult.observed_displacements,
                 mtResult.trace_lengths,
@@ -335,7 +335,7 @@ def post_process_wpinv(
             misfits_depth_mat =  misfits_depth_mat.sum(axis=1)
             scaled_field = misfits_depth_mat/misfits_depth_mat.min()
 
-            gridSearchPrefix = os.path.join(working_dir, settings.WPHASE_GRID_SEARCH_PREFIX)
+            gridSearchPrefix = os.path.join(working_dir, settings.GRID_SEARCH_PREFIX)
             plot_grid_search(
                 (eqinfo.longitude, eqinfo.latitude),
                 (cenloc[1], cenloc[0]),
@@ -354,7 +354,7 @@ def post_process_wpinv(
             lons = [metadata[trid]['longitude'] for trid in traces]
             stationDistPrefix = os.path.join(
                 working_dir,
-                settings.WPHASE_STATION_DISTRIBUTION_PREFIX)
+                settings.STATION_DISTRIBUTION_PREFIX)
             plot_station_coverage(
                 (eqinfo.latitude, eqinfo.longitude),
                 lats,

@@ -45,7 +45,7 @@ from .model import (
     TimeDelayMisfits,
 )
 from .exceptions import InversionError, RTdeconvError
-from .seismoutils import azimuthal_gap
+from .seismoutils import azimuthal_gap, ltrim, rot_12_NE
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +225,9 @@ def wpinv(
             continue
 
         # Fitting the instrument response and getting coefficients
-        response_coefficients = getCOEFFfit(trmeta['sensitivity'],freq,AmpfromPAZ)
+        response_coefficients = fit_instrument_response(
+            trmeta['sensitivity'], freq, AmpfromPAZ
+        )
         if response_coefficients is None:
             logger.warning("Impossible to get Coeff. Skipping %s", tr.id)
             trlist.remove(tr.id)
@@ -379,7 +381,9 @@ def wpinv(
             trlist.remove(tr.id)
             continue
 
-        response_coefficients = getCOEFFfit(trmeta['sensitivity'],freq,AmpfromPAZ)
+        response_coefficients = fit_instrument_response(
+            trmeta['sensitivity'], freq, AmpfromPAZ
+        )
         if response_coefficients is None:
             logger.warning("%s: Could not fit instrument response. Skipping this trace", tr.id)
             trlist.remove(tr.id)
@@ -783,14 +787,7 @@ def preliminary_magnitude(tr_p2p, dists, azis, trids,
     )
 
 
-
-def EnoughAzimuthalCoverage():
-    ##### TO BE IMPLEMENTED
-    return True
-
-
-
-def getCOEFFfit(sens, freq, resp):
+def fit_instrument_response(sens, freq, resp):
     """
     Fit the amplitude of the instrument response at a given set of frequencies.
 
@@ -1212,55 +1209,6 @@ def remove_individual_traces(tol, M, GFmatrix, observed_displacements,
 
     return GFmatrix, observed_displacements, trlist, trlen
 
-
-def rot_12_NE(st, META):
-    '''
-    Performs a  12 -> NE rotation.
-
-    :param st: A stream containing the traces to rotate.
-    :param dict META: Dictionary contaning the metadata for all streams.
-
-    :return: The rotated streams.
-    '''
-
-    st2 = st.select(channel="??1")
-    for tr in st2:
-        id1 = tr.id
-        id2 = id1[:-1] + '2'
-        tr1 = tr
-        try:
-            tr2 = st.select(id=id2)[0]
-        except IndexError:
-            st.remove(tr)
-            logger.warning("%s Channel 2 not found. Impossible to rotate", tr.id)
-            continue
-
-        timeA = max(tr1.stats.starttime,tr2.stats.starttime)
-        timeB = min(tr1.stats.endtime,tr2.stats.endtime)
-        tr1.trim(timeA,timeB)
-        tr2.trim(timeA,timeB)
-        azi = META[id1]['azimuth']
-        tr1.data, tr2.data = rot2D(tr1.data,tr2.data,-azi)
-
-    return st
-
-
-
-
-
-
-def rot2D(x,y,angle):
-    '''
-    Given 2 vector x,y (same length) it performs a couterclockwise
-    2d-rotation in a angle "angle" (degrees) for earch pair of elements
-    '''
-    ang = -angle*np.pi/180.
-    xr =  x*np.cos(ang) - y*np.sin(ang)
-    yr =  x*np.sin(ang) + y*np.cos(ang)
-    return xr,yr
-
-
-
 def get_timedelay_misfit_wrapper(args):
     return get_timedelay_misfit(*args)
 
@@ -1285,25 +1233,6 @@ def get_timedelay_misfit(t_d, GFmatrix, trlen, observed_displacements, max_t_d):
         return inversion[1][0]
     except Exception:
         raise Exception("".join(traceback.format_exception(*sys.exc_info())))
-
-
-def ltrim(data, starttime, delta):
-    '''
-    Left trimming similar to obspy but when *data* is a np array.
-
-    :param data: array to trim, with time being the last axis.
-    :type data: :py:class:`numpy.array`.
-    :param numeric starttime: The amount of time to trim from the front of the trace in seconds.
-    :param float delta: Sampling interval in seconds.
-
-    :returns: A view of the relevant subset of *data*.
-    '''
-    i_of = int(round(starttime/delta))
-    if i_of < 0:
-        gap = data[..., 0, None] * np.ones(abs(i_of))
-        return np.concatenate((gap, data), axis=-1)
-    else:
-        return data[..., i_of:]
 
 
 def make_result(cls, M: Sequence[float], misfit: float, **extra):

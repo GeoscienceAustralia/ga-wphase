@@ -9,7 +9,6 @@ from functools import lru_cache
 # The filter design stage is somewhat expensive, so we cache the results
 @lru_cache(maxsize=None)
 def design_filter(order, nyquist_frequency, low_freq, high_freq):
-    filt_type = "bandpass"
     corn_freq = [low_freq/nyquist_frequency, high_freq/nyquist_frequency]
     return signal.butter(order, corn_freq, btype='bandpass', output='sos')
 

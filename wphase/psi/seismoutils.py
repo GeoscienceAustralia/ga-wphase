@@ -4,6 +4,7 @@
 from __future__ import absolute_import, print_function
 
 from future import standard_library
+from obspy.core.stream import Stream
 standard_library.install_aliases()
 from builtins import range
 import urllib.request, urllib.error, urllib.parse, sys
@@ -81,3 +82,65 @@ def azimuthal_gap(azis):
     azis.sort()
     gaps = (azis - np.roll(azis, 1)) % 360
     return gaps.max()
+
+
+def ltrim(data, starttime, delta):
+    '''
+    Left trimming similar to obspy but when *data* is a np array.
+
+    :param data: array to trim, with time being the last axis.
+    :type data: :py:class:`numpy.array`.
+    :param numeric starttime: The amount of time to trim from the front of the trace in seconds.
+    :param float delta: Sampling interval in seconds.
+
+    :returns: A view of the relevant subset of *data*.
+    '''
+    i_of = int(round(starttime/delta))
+    if i_of < 0:
+        gap = data[..., 0, None] * np.ones(abs(i_of))
+        return np.concatenate((gap, data), axis=-1)
+    else:
+        return data[..., i_of:]
+
+
+def rot_12_NE(st: Stream, meta):
+    '''
+    Performs a  12 -> NE rotation.
+
+    :param st: A stream containing the traces to rotate.
+    :param dict meta: Dictionary contaning the metadata for all streams.
+
+    :return: The rotated streams.
+    '''
+
+    st2 = st.select(channel="??1")
+    for tr in st2:
+        id1 = tr.id
+        id2 = id1[:-1] + '2'
+        tr1 = tr
+        try:
+            tr2 = st.select(id=id2)[0]
+        except IndexError:
+            st.remove(tr)
+            logger.warning("%s Channel 2 not found. Impossible to rotate", tr.id)
+            continue
+
+        timeA = max(tr1.stats.starttime,tr2.stats.starttime)
+        timeB = min(tr1.stats.endtime,tr2.stats.endtime)
+        tr1.trim(timeA,timeB)
+        tr2.trim(timeA,timeB)
+        azi = meta[id1]['azimuth']
+        tr1.data, tr2.data = rot2D(tr1.data,tr2.data,-azi)
+
+    return st
+
+
+def rot2D(x, y, angle):
+    '''
+    Given 2 vector x,y (same length) it performs a couterclockwise
+    2d-rotation in a angle "angle" (degrees) for earch pair of elements
+    '''
+    ang = -angle*np.pi/180.
+    xr =  x*np.cos(ang) - y*np.sin(ang)
+    yr =  x*np.sin(ang) + y*np.cos(ang)
+    return xr,yr

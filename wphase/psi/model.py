@@ -197,7 +197,7 @@ class WPhaseResult(Data):
     Centroid: Optional[CentroidLocation] = None
     misfits: Optional[TimeDelayMisfits] = None
 
-    WphaseResultPlots: Optional[List[Tuple[Tuple[int, int], str]]]
+    WphaseResultPlots: Optional[List[Tuple[Tuple[int, int], str]]] = None
     """List of waveform plots produced. Each element is a pair, with the first
     element giving the range of trace indices included in the plot and the
     second element giving the filename."""

@@ -5,6 +5,7 @@ import os
 import pickle
 from functools import partial
 from traceback import format_exc
+from typing import Optional
 
 import obspy
 from obspy.clients.fdsn import Client
@@ -49,7 +50,7 @@ class LogCapture(object):
 
 
 def load_metadata(
-        client: Client,
+        client: Optional[Client],
         eqinfo: Event,
         dist_range,
         networks,
@@ -147,7 +148,7 @@ def load_metadata(
 
 def runwphase(
         output_dir,
-        server = None,
+        client: Client = None,
         greens_functions_dir = settings.GREENS_FUNCTIONS,
         n_workers_in_pool = settings.WORKER_COUNT,
         processing_level = 3,
@@ -161,8 +162,6 @@ def runwphase(
         bulk_chunk_len = 200,
         prune_cutoffs = None,
         use_only_z_components = True,
-        user=None,
-        password=None,
         inventory=None,
         waveforms=None,
         pickle_inputs=False,
@@ -185,18 +184,13 @@ def runwphase(
     :param processing_level: Processing level.
     """
 
-    if server is None and (inventory is None or waveforms is None):
-        raise ValueError("If not providing server, you must provide inventory and waveforms.")
+    if client is None and (inventory is None or waveforms is None):
+        raise ValueError("If not providing client, you must provide inventory and waveforms.")
 
     meta_t_p = {}
 
     if eqinfo is None:
         raise ValueError('eqinfo cannot be None')
-
-    if server is not None:
-        client = Client(server, user=user, password=password)
-    else:
-        client = None
 
     # get the metadata for the event
     metadata, failures = load_metadata(

@@ -11,13 +11,13 @@ from tempfile import NamedTemporaryFile
 from datetime import datetime, timedelta
 from typing import Optional
 
-from obspy.core import UTCDateTime
+from obspy.clients.fdsn import Client
 
 from seiscomp3 import DataModel as DM, Logging, IO, Core
 from seiscomp3.Client import Application
 
 from wphase import logger, runwphase, settings
-from wphase.psi.model import Event, WPhaseResult
+from wphase.psi import model
 from wphase.email import send_email
 from wphase.seiscomp import createAndSendObjects, writeSCML, charstar
 
@@ -59,6 +59,7 @@ class WPhase(Application):
         self.mag_type = None
         self.mag_value = None
         self.server = 'IRIS'
+        self.fdsn_client = None
         self.networks = 'ALL'
         self.region = 'not specified'
         self.evid = None
@@ -87,6 +88,8 @@ class WPhase(Application):
         self.save_inventory = None
         self.waveforms = None
         self.inventory = None
+
+        self.eqinfo: Optional[model.Event] = None
 
         # enable messaging support
         self.setMessagingEnabled(True)
@@ -290,26 +293,47 @@ class WPhase(Application):
             getter('save-inventory', 'save_inventory')
             getter('waveforms', 'waveforms')
             getter('inventory', 'inventory')
+            getter('server')
+
+            if self.server is not None:
+                self.fdsn_client = Client(self.server)
+            elif not (self.waveforms and self.inventory):
+                logger.error('Must provide either server or waveforms+inventory to run inversion.')
+                return False
+
+            getter('evid')
 
             try:
-                self.eqinfo = Event(
+                self.eqinfo = model.Event(
                     latitude=float(self.commandline().optionDouble("lat")),
                     longitude=float(self.commandline().optionDouble("lon")),
                     depth=depth,
                     time=self.commandline().optionString("time"),
                 )
             except Exception:
-                logger.error('You must provide either lat/lon/time or a JSON payload')
-                return False
+                if not (self.fdsn_client and self.evid):
+                    logger.error('You must provide a JSON payload, lat/lon/time or an evid to fetch from FDSN')
+                    return False
+                try:
+                    cat = self.fdsn_client.get_events(eventid=self.evid)
+                    origin = cat.events[0].preferred_origin()
+                except Exception:
+                    logger.exception("Could not retrieve event %s from FDSN server at %s",
+                                     self.evid, self.server)
+                    return False
+                self.eqinfo = model.Event(
+                    longitude=origin.longitude,
+                    latitude=origin.latitude,
+                    depth=origin.depth,
+                    time=origin.time,
+                )
 
             getter('sourcezone')
             getter('magtype', 'mag_type')
             getter('magvalue', 'mag_value', conv=float)
             getter('outputs', 'output')
-            getter('server')
             getter('networks')
             getter('region')
-            getter('evid')
             getter('resultid')
             getter('notificationemail')
             getter('emailmethod', 'email_method')
@@ -369,7 +393,7 @@ class WPhase(Application):
         if Application.init(self) == False:
             return False
 
-        result: Optional[WPhaseResult] = None
+        result: Optional[model.WPhaseResult] = None
 
         Logging.enableConsoleLogging(Logging.getGlobalChannel("error"))
         wphase_failed = False
@@ -377,14 +401,14 @@ class WPhase(Application):
         if self.filename is not None:
             # Output JSON was provided, so we just send it to messaging.
             logger.info("Parsing W-Phase result from file.")
-            result = WPhaseResult.parse_file(self.filename)
+            result = model.WPhaseResult.parse_file(self.filename)
         else:
             # Run the inversion.
             try:
                 logger.info("Starting W-Phase.")
                 result = runwphase(
                     output_dir=self.output,
-                    server=self.server,
+                    server=self.fdsn_client,
                     eqinfo=self.eqinfo,
                     networks=self.networks,
                     make_maps=self.make_maps,
@@ -465,7 +489,7 @@ class WPhase(Application):
         self,
         event_id: str,
         result_id: str,
-        result: Optional[WPhaseResult],
+        result: Optional[model.WPhaseResult],
         call_succeeded: bool,
     ):
         """Create email subject and body to notify result.

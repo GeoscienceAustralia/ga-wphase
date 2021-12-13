@@ -3,6 +3,9 @@
 import os
 import errno
 import logging
+from typing import Optional, Union
+
+from obspy.clients.fdsn.client import Client
 
 from wphase.psi import model
 
@@ -23,11 +26,13 @@ from ._runner_fdsn import runwphase as wphase_runner
 
 def runwphase(
     output_dir = None,
-    server = None,
+    server: Union[Client, str] = None,
     greens_functions_dir = settings.GREENS_FUNCTIONS,
     n_workers_in_pool = settings.WORKER_COUNT,
     processing_level = 3,
     output_dir_can_exist = False,
+    user = None,
+    password = None,
     **kwargs) -> model.WPhaseResult:
     """
     Run wphase.
@@ -42,8 +47,13 @@ def runwphase(
     :param output_dir_can_exist: Can the output directory already exist?
     """
 
-    if server is not None and server.lower() == 'antelope':
-        raise Exception('Antelope is no longer supported.')
+    client: Optional[Client] = None # can be None if inv+waveform files are provided
+    if isinstance(server, Client):
+        client = server
+    elif isinstance(server, str):
+        if server.lower() == 'antelope':
+            raise Exception('Antelope is no longer supported.')
+        client = Client(server, user=user, password=password)
 
     # Make the output directory (fails if it already exists).
     if output_dir:
@@ -56,14 +66,14 @@ def runwphase(
 
     wphase_results = wphase_runner(
         output_dir,
-        server,
+        client,
         greens_functions_dir,
         n_workers_in_pool,
         processing_level,
         **kwargs)
 
     wphase_results.HostName = settings.HOST_NAME
-    wphase_results.DataSource = server if server else "local files"
+    wphase_results.DataSource = client.base_url if client else "local files"
 
     # save the results if output_dir provided
     if output_dir:

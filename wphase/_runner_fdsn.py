@@ -247,8 +247,9 @@ def runwphase(
         # do and post-process the inversion
         profiler = WPInvProfiler(output_dir) if settings.PROFILE else NoProfiler()
         with profiler:
-            with LogCapture(logger, logging.WARNING) as capture:
-                try:
+            capture = None
+            try:
+                with LogCapture(logger, logging.WARNING) as capture:
                     wphase_output = wpinv(
                         streams,
                         meta_t_p,
@@ -256,11 +257,13 @@ def runwphase(
                         greens_functions_dir,
                         processes = n_workers_in_pool,
                         OL = processing_level)
-                except InversionError as e:
-                    wphase_output.add_warning(e)
+            except InversionError as e:
+                logger.error("Inversion Error: %s", e)
+                wphase_output.add_warning(e)
 
-            for message in capture.messages:
-                wphase_output.add_warning(message)
+            if capture is not None:
+                for message in capture.messages:
+                    wphase_output.add_warning(message)
 
             try:
                 post_process_wpinv(

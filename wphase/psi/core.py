@@ -800,7 +800,7 @@ def fit_instrument_response(sens, freq, resp):
     """
 
     try:
-        with np.errstate(invalid='raise'):
+        with np.errstate(all='raise'):
             X = (2.*np.pi*freq)**2
             Y = X*X*(1./resp/resp-1.)
             fit = np.polyfit(X,Y,1)

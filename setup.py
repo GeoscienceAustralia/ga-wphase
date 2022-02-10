@@ -50,9 +50,9 @@ setup(
         'future',
         'h5py',
         'matplotlib', # obspy imports this anyway, so we don't relegate it to [plotting]
-        'numpy',
+        'numpy>=1.9.0',
         'obspy',
-        'pydantic',
+        'pydantic~=1.9',
         'pyinstrument==0.13.1',
         'pytest',
         'scipy>=0.16.0',

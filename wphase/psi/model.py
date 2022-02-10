@@ -9,7 +9,7 @@ from typing import List, Optional, OrderedDict, Tuple, TYPE_CHECKING
 
 import numpy as np
 from obspy import UTCDateTime as _UTCDateTime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # Sadly we have to jump through some hoops to cleanly add pydantic validators
 # to third-party types if we want it to type-check correctly:
@@ -29,25 +29,13 @@ else:
 
 
 class Data(BaseModel):
-    """Fields listed in this set will not be included in serialized JSON outputs."""
-
-    _exclude_from_json = set()
-
-    def dict(self, *args, exclude=None, **kwargs):
-        if isinstance(exclude, dict):
-            exclude = {**exclude, **{x: ... for x in self._exclude_from_json}}
-        else:
-            exclude = {*(exclude or []), *self._exclude_from_json}
-        return super().dict(*args, exclude=exclude, **kwargs)
-
     class Config:
         json_encoders = {
             _UTCDateTime: lambda t: str(t).replace("T", " ").replace("Z", ""),
             np.ndarray: np.ndarray.tolist,
         }
-        arbitrary_types_allowed = (
-            True  # since we have some non-serialized ndarray fields
-        )
+        # since we have some non-serialized ndarray fields:
+        arbitrary_types_allowed = True
         extra = "forbid"
 
 
@@ -59,8 +47,7 @@ class OL1Result(Data):
     nstations: int
     used_traces: List[str]
 
-    preliminary_calc_details: dict
-    _exclude_from_json = {"preliminary_calc_details"}
+    preliminary_calc_details: dict = Field(exclude=True)
 
 
 class OL2Result(Data):
@@ -84,14 +71,9 @@ class OL2Result(Data):
     used_traces: List[str]
     trace_lengths: OrderedDict[str, int]
 
-    moment_tensor: np.ndarray
-    observed_displacements: np.ndarray
-    synthetic_displacements: np.ndarray
-    _exclude_from_json = {
-        "moment_tensor",
-        "observed_displacements",
-        "synthetic_displacements",
-    }
+    moment_tensor: np.ndarray = Field(exclude=True)
+    observed_displacements: np.ndarray = Field(exclude=True)
+    synthetic_displacements: np.ndarray = Field(exclude=True)
 
 
 class OL3Result(OL2Result):
@@ -100,18 +82,13 @@ class OL3Result(OL2Result):
 
     centroid: Tuple[float, float, float]
 
-    grid_search_candidates: List[Tuple[float, float, float]]
+    grid_search_candidates: List[Tuple[float, float, float]] = Field(exclude=True)
     """List of inputs to core_inversion that were used in the grid search.
     Elements are (lat, lon, depths) tuples."""
-    grid_search_results: List[Tuple[np.ndarray, float]]
+
+    grid_search_results: List[Tuple[np.ndarray, float]] = Field(exclude=True)
     """List of outputs from the inversion for each point in the grid search.
     elements are (MT, misfit) tuples."""
-
-    _exclude_from_json = {
-        *OL2Result._exclude_from_json,
-        "grid_search_candidates",
-        "grid_search_results",
-    }
 
 
 class Quality(Data):

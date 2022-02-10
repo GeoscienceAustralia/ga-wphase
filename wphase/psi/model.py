@@ -38,7 +38,7 @@ class Data(BaseModel):
             exclude = {**exclude, **{x: ... for x in self._exclude_from_json}}
         else:
             exclude = {*(exclude or []), *self._exclude_from_json}
-        return super().dict(*args, exclude=exclude, *kwargs)
+        return super().dict(*args, exclude=exclude, **kwargs)
 
     class Config:
         json_encoders = {

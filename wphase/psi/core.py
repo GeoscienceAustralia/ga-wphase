@@ -287,11 +287,20 @@ def wpinv(
     DIST = np.sort(DIST)
 
     # Median rejection
-    median_p2p = np.median(tr_p2p)
+    median_p2p = np.nanmedian(tr_p2p)
     mrcoeff = settings.MEDIAN_REJECTION_COEFF
-    accepted_traces = [i for i in range(len(tr_p2p))
-                         if tr_p2p[i] < mrcoeff[1]*median_p2p
-                         and tr_p2p[i] > mrcoeff[0]*median_p2p]
+    p2pmax, p2pmin = mrcoeff[1]*median_p2p, mrcoeff[0]*median_p2p
+    accepted_traces = []
+    for i, (trid, p2p) in enumerate(zip(trlist_pre, tr_p2p)):
+        if np.isnan(p2p):
+            logger.warning("P2P Amp for %s is NaN! Excluding.", trid)
+        elif p2p > p2pmax:
+            logger.info("P2P Amp for %s is too big (%.2e > %.2e). Excluding.", trid, p2p, p2pmax)
+        elif p2p < p2pmin:
+            logger.info("P2P Amp for %s is too small (%.2e < %.2e). Excluding.", trid, p2p, p2pmin)
+        else:
+            accepted_traces.append(i)
+
     gap = azimuthal_gap(AZI)
     if gap > settings.MAXIMUM_AZIMUTHAL_GAP:
         raise InversionError("Lack of azimuthal coverage (%.0f° > %.0f°). Aborting."

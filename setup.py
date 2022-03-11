@@ -30,9 +30,9 @@ else:
 
 setup(
     name = 'Wphase',
-    version = '0.3beta1',
+    version = '0.3rc1',
     packages = ['wphase', 'wphase.psi'],
-    author = 'Geoscience Austraila',
+    author = 'Geoscience Australia',
     description = 'Wphase calculations and web interface.',
     package_dir = {'wphase':'wphase', 'wphase.psi': 'wphase/psi'},
     scripts = ['scripts/wphase'],

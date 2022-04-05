@@ -42,7 +42,7 @@ USER wphase
 WORKDIR /home/wphase
 
 # Install pinned dependencies from PyPI
-COPY requirements.txt ./requirements.txt
+COPY docker/requirements.txt ./requirements.txt
 RUN pip3 install --user --no-cache-dir --no-deps -r requirements.txt
 
 # Install seiscomp 4.6.

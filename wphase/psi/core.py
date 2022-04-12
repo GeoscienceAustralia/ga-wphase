@@ -160,6 +160,10 @@ def wpinv(
     st_sel+= st.select(location = '--')
     st_sel+= st.select(location = '') #Check this.
 
+    # We don't really care exactly what ordering obspy chooses
+    # here; we just want a deterministic ordering so we can compare runs.
+    st_sel.sort()
+
     #st_sel = st_sel.select(component = 'Z')
     #We also want to select stations with one location code which is not the
     #default (see above).

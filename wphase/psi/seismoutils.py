@@ -31,8 +31,10 @@ def get_azimuths(meta, trlist, loc):
     Return the azimuths in degrees given metadata dict, list of
     station ids and location of the epicentre.
     '''
-    return [gps2dist_azimuth(loc[0], loc[1], meta[t]['latitude'], meta[t]['longitude'])
-            for t in trlist]
+    return [
+        gps2dist_azimuth(loc[0], loc[1], meta[t]["latitude"], meta[t]["longitude"])[2]
+        for t in trlist
+    ]
 
 def station_pruning(meta, trlist, cutoffs=[1.,2.,5], units='deg'):
     '''
@@ -79,6 +81,8 @@ def azimuthal_gap(azis):
     if len(azis) < 2:
         return 360.
     azis = np.asarray(azis) % 360
+    if len(azis.shape) != 1:
+        raise ValueError("Input to azimuthal_gap must be a one-dimensional array!")
     azis.sort()
     gaps = (azis - np.roll(azis, 1)) % 360
     return gaps.max()

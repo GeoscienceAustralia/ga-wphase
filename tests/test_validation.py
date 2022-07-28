@@ -20,6 +20,7 @@ def test_validity_from_fixed_datasets(event, tmpdir):
     inventory, waveforms = get_dataset(event)
 
     eqinfo = Event(
+        id=event["id"],
         latitude=event["lat"],
         longitude=event["lon"],
         depth=event["dep"],
@@ -39,3 +40,7 @@ def test_validity_from_fixed_datasets(event, tmpdir):
     EXP = event['_expected_results']
     assert_allclose([EXP[k] for k in result_keys],
                     [getattr(MT, k) for k in result_keys])
+    ag = EXP.get("azimuthal_gap")
+    if ag is not None:
+        assert r.QualityParams is not None
+        assert_allclose(r.QualityParams.azimuthal_gap, ag)

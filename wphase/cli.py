@@ -88,6 +88,7 @@ class WPhase(Application):
         self.save_inventory = None
         self.waveforms = None
         self.inventory = None
+        self.no_messaging = False
 
         self.eqinfo: Optional[model.Event] = None
 
@@ -251,6 +252,10 @@ class WPhase(Application):
             "Input",
             "overwrite",
             "Whether to overwrite existing outputs or not.")
+        self.commandline().addOption(
+            "Input",
+            "no-messaging",
+            "Disable seiscomp messaging output.,")
 
     def processArg(self, name, to=None, default=None, conv=str):
         if to is None:
@@ -353,6 +358,7 @@ class WPhase(Application):
             getter('smtp-password', 'smtp_password')
             getflag('smtp-ssl', 'smtp_ssl')
             getflag('smtp-tls', 'smtp_tls')
+            getflag("no-messaging", "no_messaging")
 
             if self.evid is not None:
                 self.output = os.path.join(self.output, self.evid)
@@ -378,6 +384,9 @@ class WPhase(Application):
                     ):
                 logger.error('cannot send email.')
                 return False
+
+            if self.no_messaging:
+                self.setMessagingEnabled(False)
 
         return True
 
@@ -422,7 +431,7 @@ class WPhase(Application):
                 logger.exception("W-Phase run failed.")
                 wphase_failed = True
 
-        if result is not None:
+        if not self.no_messaging and result is not None:
             try:
                 objs = createAndSendObjects(
                     result, self.connection(), evid=self.evid, agency=self.agency

@@ -44,8 +44,11 @@ class OL1Result(Data):
     for the actual W-Phase inversion."""
 
     magnitude: float
+    """Mw magnitude estimated using station azimuths, distances and p2p amplitude."""
     nstations: int
+    """Number of stations used in fit"""
     used_traces: List[str]
+    """List of waveform stream IDs of channels used in fit"""
 
     preliminary_calc_details: dict = Field(exclude=True)
 
@@ -58,22 +61,39 @@ class OL2Result(Data):
     contain heavy-duty data like the synthetic waveforms)."""
 
     Mrr: float
+    """R-R component of moment tensor in Newton-metres"""
     Mtt: float
+    """Θ-Θ component of moment tensor in Newton-metres"""
     Mpp: float
+    """Φ-Φ component of moment tensor in Newton-metres"""
     Mrt: float
+    """R-Θ component of moment tensor in Newton-metres"""
     Mrp: float
+    """R-Φ component of moment tensor in Newton-metres"""
     Mtp: float
+    """Θ-Φ component of moment tensor in Newton-metres"""
     misfit: float
+    """Solution misfit (percentage L2 difference between observed and synthetic
+    displacements)"""
     m0: float
+    """Scalar moment in Newton-metres"""
     magnitude: float
+    """Mww magnitude"""
     depth: float
+    """Depth in km used in inversion"""
     time_delay: float
+    """Time delay in seconds"""
     used_traces: List[str]
+    """List of waveform stream IDs of channels used in inversion"""
     trace_lengths: OrderedDict[str, int]
+    """Length of each waveform trace, keyed on waveform stream ID"""
 
     moment_tensor: np.ndarray = Field(exclude=True)
+    """Moment tensor in Newton-metres as a 6-element array"""
     observed_displacements: np.ndarray = Field(exclude=True)
+    """Observed displacements (after filtering)"""
     synthetic_displacements: np.ndarray = Field(exclude=True)
+    """Synthetic displacements for this solution"""
 
 
 class OL3Result(OL2Result):
@@ -81,6 +101,7 @@ class OL3Result(OL2Result):
     centroid."""
 
     centroid: Tuple[float, float, float]
+    """Optimal centroid location as tuple (latitude (deg), longitude (deg), depth (km))"""
 
     grid_search_candidates: List[Tuple[float, float, float]] = Field(exclude=True)
     """List of inputs to core_inversion that were used in the grid search.

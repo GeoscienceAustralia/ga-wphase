@@ -14,7 +14,7 @@ class InversionError(Exception):
         super().__init__(*args)
         self.result = result
 
-class RTdeconvError(Exception):
+class DeconvolutionError(Exception):
     """An error encountered during deconvolution of waveforms."""
 
 class UnknownTransferFunction(Exception):

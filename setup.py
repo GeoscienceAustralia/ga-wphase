@@ -52,6 +52,7 @@ setup(
         'matplotlib', # obspy imports this anyway, so we don't relegate it to [plotting]
         'numpy>=1.9.0',
         'obspy',
+        'pandas',
         'pydantic~=1.9',
         'pyinstrument==0.13.1',
         'pytest',

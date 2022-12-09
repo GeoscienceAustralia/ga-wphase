@@ -40,6 +40,21 @@ class Data(BaseModel):
         extra = "forbid"
 
 
+class PreliminaryMagnitudeFit(Data):
+    magnitude: float
+    unclamped_magnitude: float
+    scalar_moment: float
+    timescale: float
+    regularization: float
+    strike: float
+    average_amplitude: float
+    anisotropy: float
+    eccentricity: float
+    corrected_amplitudes: np.ndarray
+    azimuths: np.ndarray
+    trids: List[str]
+
+
 class OL1Result(Data):
     """Result of the preliminary magnitude fit, which is used as a first guess
     for the actual W-Phase inversion."""
@@ -51,7 +66,7 @@ class OL1Result(Data):
     used_traces: List[str]
     """List of waveform stream IDs of channels used in fit"""
 
-    preliminary_calc_details: dict = Field(exclude=True)
+    preliminary_calc_details: PreliminaryMagnitudeFit = Field(exclude=True)
 
 
 class OL2Result(Data):

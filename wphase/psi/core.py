@@ -11,7 +11,7 @@ from builtins import range, str
 from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor
 from timeit import default_timer as timer
-from typing import Mapping, NamedTuple, Optional, Sequence
+from typing import Literal, Mapping, NamedTuple, Optional, Sequence, Union
 
 import h5py
 import numpy as np
@@ -39,18 +39,12 @@ except ImportError:
     from obspy.signal.invsim import paz2AmpValueOfFreqResp as paz_2_amplitude_value_of_freq_resp
 
 from wphase import settings
-from .greens import GreensFunctions
+
 from .bandpass import bandpassfilter
-from .model import (
-    ChannelMetadata,
-    WPhaseResult,
-    OL1Result,
-    OL2Result,
-    OL3Result,
-    Event,
-    TimeDelayMisfits,
-)
-from .exceptions import InversionError, RTdeconvError
+from .exceptions import InversionError, DeconvolutionError, UnknownTransferFunction
+from .greens import GreensFunctions
+from .model import (ChannelMetadata, Event, OL1Result, OL2Result, OL3Result, PreliminaryMagnitudeFit,
+                    TimeDelayMisfits, WPhaseResult)
 from .seismoutils import azimuthal_gap, ltrim, rot_12_NE
 
 logger = logging.getLogger(__name__)
@@ -68,6 +62,17 @@ def amplitude_at_frequency(metadata: ChannelMetadata, frequency: float):
         "zeros": metadata.zeros,
         "gain": metadata.gain,
     }, frequency)
+
+def stream_to_df(stream: Stream, metadata: Mapping[str, ChannelMetadata]):
+    def trace_to_record(trace: Trace):
+        return {
+            "id": trace.id,
+            "location": trace.stats.location,
+            "component": trace.stats.component,
+            "trace": trace,
+            "metadata": metadata.get(trace.id),
+        }
+    return pd.DataFrame.from_records(map(trace_to_record, stream), index="id")
 
 def wpinv(
     stream: Stream,
@@ -116,7 +121,7 @@ def wpinv(
     hyplat = event.latitude
     hyplon = event.longitude
     hypdep = event.depth
-    orig = UTCDateTime(event.time)
+    origin_time = UTCDateTime(event.time)
 
     # Deal with extremly shallow preliminary hypocenters by clamping to 10km
     if hypdep < 10.:
@@ -132,90 +137,65 @@ def wpinv(
     # We don't really care exactly what ordering obspy chooses
     # here; we just want a deterministic ordering so we can compare runs.
     st_sel.sort()
+    st_orig = st_sel.copy()
 
     logger.info('Initial number of traces: using %d with default locations (of %d total)', len(st_sel), len(stream))
 
     # rotate the horizontal components to geographical north or east
     st_sel = rot_12_NE(st_sel, metadata)
 
-    # traces to use the preliminary mag calculation
-    st_sel_prem_mag = st_sel.select(component = 'Z').copy()
+    data = stream_to_df(st_sel, metadata)
 
-    # will contain distances epicenter - station
-    DIST = np.array([])
+    def epicentral_distance(row):
+        return locations2degrees(hyplat, hyplon, row.metadata.latitude, row.metadata.longitude)
+    data["distance"] = data.apply(epicentral_distance, axis=1)
 
-    # trlist  contains the station IDs. If a station is then rejected
-    # it must be removed from this list.
-    trlist = [tr.id for tr in st_sel]
-    trlist_pre = []
+    def azimuth_from_north(row):
+        return gps2dist_azimuth(hyplat, hyplon, row.metadata.latitude, row.metadata.longitude)[1]
+    data["azimuth"] = data.apply(azimuth_from_north, axis=1)
 
-    # Peak to peak amplitude of each trace.
-    tr_p2p = []
+    def travel_time(row):
+        return ptimes.get(row.name)
+    data["ptime"] = data.apply(travel_time, axis=1)
 
-    # List with the station azimuths
-    AZI = []
+    data["start_time"] = data["ptime"].map(lambda t: origin_time + t)
+    data["end_time"] = data["start_time"] + data["distance"] * settings.WPHASE_CUTOFF
 
-    # Instrument deconvolution and bandpass filtering:
-    i = 0
-    for tr in st_sel_prem_mag:
-        trmeta = metadata[tr.id]
-        trlat = trmeta.latitude
-        trlon = trmeta.longitude
-        tr.data = np.array(tr.data, dtype=float)
-
-        # compute distance in degrees between 2 locations
-        dist = locations2degrees(hyplat, hyplon, trlat, trlon)
-
-        # compute azimuth from north
-        azi = gps2dist_azimuth(hyplat, hyplon, trlat, trlon)[1]
-
-        # if p-arrival time is not calculated, then calculate it.
-        # WARNING: this can be very slow in new versions of obspy.
-        t_p = ptimes.get(tr.id)
-        if not t_p:
-            from obspy.taup.taup import getTravelTimes
-            t_p =  getTravelTimes(dist,hypdep)[0]['time']
-
-        # sample period in seconds
-        dt = tr.stats.delta
-
-        # Wphase (UTC) time window
-        t1 = orig + t_p
-        t2 = t1 + dist*settings.WPHASE_CUTOFF
+    def process_waveforms(row: pd.Series):
+        trid = row.name
 
         try:
-            response_amplitude = amplitude_at_frequency(trmeta, freq)
+            response_amplitude = amplitude_at_frequency(row.metadata, freq)
         except UnknownTransferFunction:
-            logger.warning("Unknown transfer function. Skipping %s", tr.id)
-            trlist.remove(tr.id)
-            continue
+            logger.warning("Unknown transfer function. Skipping %s", trid)
+            return None
 
         # Fitting the instrument response and getting coefficients
         response_coefficients = fit_instrument_response(
-            trmeta.sensitivity, freq, response_amplitude
+            row.metadata.sensitivity, freq, response_amplitude
         )
         if response_coefficients is None:
-            logger.warning("Impossible to get Coeff. Skipping %s", tr.id)
-            trlist.remove(tr.id)
-            continue
+            logger.warning("Couldn't fit instrument response coefficients. Skipping %s", trid)
+            return None
         else:
             om0, h, G = response_coefficients
 
-        amplitude_from_coeff = np.abs(omega*omega / \
-                (omega*omega + 2j*h*om0*omega - om0*om0))
+        amplitude_from_coeff = np.abs(omega*omega / (omega*omega + 2j*h*om0*omega - om0*om0))
 
-        # L2 norm:
-        misfit = 100*np.linalg.norm(response_amplitude-amplitude_from_coeff) \
-                / np.linalg.norm(response_amplitude)
+        # Misfit is the relative L2 norm of the difference, expressed as a percentage
+        misfit = (
+            100*np.linalg.norm(response_amplitude-amplitude_from_coeff)
+            / np.linalg.norm(response_amplitude)
+        )
 
         if misfit > settings.RESPONSE_MISFIT_TOL:
-            logger.warning('Bad fitting for response (misfit=%e). Skipping %s', misfit, tr.id)
-            continue
+            logger.warning('Bad fit for instrument response (misfit=%e). Skipping %s', misfit, trid)
+            return None
 
-        # tr.data will cointain the deconvolved and filtered displacements.
+        dt = row.trace.stats.delta
         try:
-            tr.data, coeff = RTdeconv(
-                tr,
+            row.trace.data = deconvolve_and_filter(
+                row.trace,
                 om0,
                 h,
                 G,
@@ -224,86 +204,81 @@ def wpinv(
                 baselinelen=60./dt,
                 taperlen=10.,
                 fmin=1./Tb,
-                fmax=1./Ta,
-                get_coef=True)
+                fmax=1./Ta
+            )
 
-        except RTdeconvError as e:
-            logger.warning("Error deconvolving trace %s: %s", tr.id, str(e))
-            trlist.remove(tr.id)
-            continue
+        except DeconvolutionError as e:
+            logger.warning("Error deconvolving trace %s: %s", trid, str(e))
+            return None
 
         # trim to the Wphase time window
-        tr.trim(t1,t2)
-        if len(tr)== 0:
-            logger.warning("Empty trace. Skipping %s", tr.id)
-            trlist.remove(tr.id)
-            continue
+        row.trace.trim(row.start_time, row.end_time)
+        if len(row.trace) == 0:
+            logger.warning("Empty trace. Skipping %s", trid)
+            return None
 
-        trlist_pre.append(tr.id)
-        tr_p2p.append(tr[:].max()-tr[:].min())
-        AZI.append(azi)
-        DIST = np.append(DIST, dist)
-        i += 1
+        return row.trace
 
-    # Sorting the IDs according to their distance to the source:
-    sorted_indices = np.argsort(DIST)
-    trlist_pre = [trlist_pre[i] for i in sorted_indices]
-    tr_p2p = [tr_p2p[i] for i in sorted_indices]
-    AZI = [AZI[i] for i in sorted_indices]
-    DIST = np.sort(DIST)
+    data["trace"] = data.apply(process_waveforms, axis=1)
+    # Remove channels that failed waveform preprocessing:
+    data: pd.DataFrame = data[data.trace.notnull()] # type: ignore
+    data["p2p"] = data.apply(lambda row: row.trace[:].max() - row.trace[:].min(), axis=1)
+
+    data = data.sort_values("distance")
 
     # Median rejection
-    median_p2p = np.nanmedian(tr_p2p)
+    median_p2p = data.p2p.median(skipna=True)
     mrcoeff = settings.MEDIAN_REJECTION_COEFF
     p2pmax, p2pmin = mrcoeff[1]*median_p2p, mrcoeff[0]*median_p2p
-    accepted_traces = []
-    for i, (trid, p2p) in enumerate(zip(trlist_pre, tr_p2p)):
-        if np.isnan(p2p):
-            logger.warning("P2P Amp for %s is NaN! Excluding.", trid)
-        elif p2p > p2pmax:
-            logger.info("P2P Amp for %s is too big (%.2e > %.2e). Excluding.", trid, p2p, p2pmax)
-        elif p2p < p2pmin:
-            logger.info("P2P Amp for %s is too small (%.2e < %.2e). Excluding.", trid, p2p, p2pmin)
-        else:
-            accepted_traces.append(i)
 
-    gap = azimuthal_gap(AZI)
+    for trid, row in data.iterrows():
+        if np.isnan(row.p2p):
+            logger.warning("P2P Amp for %s is NaN! Excluding.", trid)
+        elif row.p2p > p2pmax:
+            logger.info("P2P Amp for %s is too big (%.2e > %.2e). Excluding.", trid, row.p2p, p2pmax)
+        elif row.p2p < p2pmin:
+            logger.info("P2P Amp for %s is too small (%.2e < %.2e). Excluding.", trid, row.p2p, p2pmin)
+
+    accepted_data: pd.DataFrame = data[data.p2p.between(p2pmin, p2pmax) & (data.component == "Z")] # type: ignore
+
+    gap = azimuthal_gap(data.azimuth)
     if gap > settings.MAXIMUM_AZIMUTHAL_GAP:
         raise InversionError("Lack of azimuthal coverage (%.0f° > %.0f°). Aborting."
-                             % (gap, settings.settings.MAXIMUM_AZIMUTHAL_GAP))
-    if len(accepted_traces) < settings.MINIMUM_STATIONS:
+                             % (gap, settings.MAXIMUM_AZIMUTHAL_GAP))
+    if len(accepted_data) < settings.MINIMUM_STATIONS:
         raise InversionError("Lack of stations (%d < %d). Aborting."
-                             % (len(accepted_traces), settings.MINIMUM_STATIONS))
+                             % (len(accepted_data), settings.MINIMUM_STATIONS))
 
     logger.info("Traces accepted for preliminary magnitude calculation: {}"
-                .format(len(accepted_traces)))
+                .format(len(accepted_data)))
 
-    # Get the preliminary mag:
-    tr_p2p_con = [tr_p2p[i] for i in accepted_traces]
-    DIST_con   = [DIST[i] for i in accepted_traces]
-    AZI_con    = [AZI[i] for i in accepted_traces]
-    trlist_pre_con = [trlist_pre[i] for i in accepted_traces]
-    pre_results = preliminary_magnitude(tr_p2p_con, DIST_con, AZI_con, trlist_pre_con)
+    pre_results = preliminary_magnitude(
+        accepted_data.p2p,
+        accepted_data.distance,
+        accepted_data.azimuth,
+        accepted_data.index,
+    )
 
-    pre_wp_mag = pre_results['magnitude']
-    t_h = pre_results['t_h']
+    pre_wp_mag = pre_results.magnitude
+    t_h = pre_results.timescale
     logger.info("Preliminary t_h = %.2f" % t_h)
 
     logger.info("OL1:")
-    logger.info("Average amplitude:  %.1em", pre_results['average_amplitude'])
+    logger.info("Average amplitude:  %.1em", pre_results.average_amplitude)
     logger.info("Magnitude:          %.2f", pre_wp_mag)
-    logger.info("Strike:             %.1f°", pre_results['strike'])
-    logger.info("Eccentricity (b/a): %.2f", pre_results['eccentricity'])
+    logger.info("Strike:             %.1f°", pre_results.strike)
+    logger.info("Eccentricity (b/a): %.2f", pre_results.eccentricity)
 
     ol1 = OL1Result(
         preliminary_calc_details=pre_results,
-        used_traces=trlist,
-        nstations=len(accepted_traces),
+        used_traces=list(accepted_data.index),
+        nstations=len(accepted_data),
         magnitude=round(pre_wp_mag, 1),
     )
     result = WPhaseResult(OL1=ol1, Event=event)
     if OL == 1:
         return result
+
     #############  Output Level 2    #######################################
     #############  Moment Tensor based on preliminary hypercenter (PDE) ####
     # Much of what follows is the same as what was done above, but we will be
@@ -329,18 +304,17 @@ def wpinv(
     # Preparing the data:
     DIST = []
     DATA_INFO = {} #Minimum info to be able to filter the displacements afterwards
+    st_sel = st_orig
+    trlist = np.array([tr.id for tr in st_orig])
     for trid in trlist[:]:
         trmeta = metadata[trid]
         trlat = trmeta.latitude
         trlon = trmeta.longitude
         dist = locations2degrees(hyplat, hyplon, trlat, trlon)
         t_p = ptimes.get(trid)
-        if not t_p:
-            from obspy.taup.taup import getTravelTimes
-            t_p =  getTravelTimes(dist,hypdep)[0]['time']
 
         # W-phase time window
-        t1 = orig + t_p
+        t1 = origin_time + t_p
         t2 = t1 + dist*settings.WPHASE_CUTOFF
         tr = st_sel.select(id = trid)[0]
         dt = tr.stats.delta
@@ -366,16 +340,15 @@ def wpinv(
         DATA_INFO[tr.id] = [om0, h, G, dt, t1, t2]
 
         try:
-            tr.data, coeff = RTdeconv(
+            tr.data = deconvolve_and_filter(
                 tr, om0, h, G, dt,
                 corners=4,
                 baselinelen=60./dt,
                 taperlen= 10.,
                 fmin = 1./Tb,
-                fmax = 1./Ta,
-                get_coef = True)
+                fmax = 1./Ta)
 
-        except RTdeconvError as e:
+        except DeconvolutionError as e:
             logger.warning("%s: Skipping due to error in deconvolution: %s", tr.id, str(e))
             trlist.remove(tr.id)
             continue
@@ -647,7 +620,7 @@ def get_corner_freqs_from_mag(Mw):
 
 
 def preliminary_magnitude(tr_p2p, dists, azis, trids,
-                          regularization=settings.AMPLITUDE_REGULARIZATION):
+                          regularization=settings.AMPLITUDE_REGULARIZATION) -> PreliminaryMagnitudeFit:
     '''
     Compute the preliminary magnitude.
 
@@ -746,19 +719,19 @@ def preliminary_magnitude(tr_p2p, dists, azis, trids,
 
     b = np.sqrt(x[1]*x[1] + x[2]*x[2])
 
-    return dict(
+    return PreliminaryMagnitudeFit(
         magnitude=pre_wp_mag,
         unclamped_magnitude=unclamped,
-        M0=M0,
-        t_h=t_h,
+        scalar_moment=M0,
+        timescale=t_h,
         regularization=regularization,
         strike=pre_strike,
         average_amplitude=amp,
         anisotropy=b,
         eccentricity=b/(amp+b/2),
-        corrected_amplitudes=corrected_amplitudes,
-        azimuths=azis,
-        trids=trids,
+        corrected_amplitudes=np.asarray(corrected_amplitudes),
+        azimuths=np.asarray(azis),
+        trids=list(trids),
     )
 
 
@@ -789,21 +762,20 @@ def fit_instrument_response(sens, freq, resp):
 
 
 
-def RTdeconv(
-        tr,
-        om0,
-        h,
-        G,
-        dt,
-        corners = 4,
-        baselinelen = 60.,
-        taperlen = 10.,
-        fmin = 0.001,
-        fmax = 0.005,
-        get_coef = False,
-        data_type = 'raw'):
+def deconvolve_and_filter(
+    tr: Trace,
+    om0: float,
+    h: float,
+    G: float,
+    dt: float,
+    corners: int = 4,
+    baselinelen: float = 60.,
+    taperlen: float = 10.,
+    fmin: float = 0.001,
+    fmax: float = 0.005,
+):
     '''
-    Using the coef. of one station computes the displacement trace.
+    Deconvolve and filter the trace from a single channel.
 
     :param tr: Data (trace) to be deconvoluted.
     :param float om0: Natural frequency of the seismometer.
@@ -819,64 +791,55 @@ def RTdeconv(
         applied.
     :param float fmax: Upper corner frequency of the Butterworth filter to be
         applied.
-    :param str data_type: Type of data. 'raw' for raw data to be deconvoluted,
-        'accel' for deconvoluted acceleration.
 
     :return: Time series with the deconvoluted displacement trace
     '''
 
     if G <= 0.:
         # I guess this should never occur, but I was getting division by
-        # zero erros in RTdeconv due either this or dt being equal to zero
-        raise RTdeconvError("Negative or zero sensitivity, skipping: {}".format(tr.id))
+        # zero erros in deconvolve_and_filter due either this or dt being equal to zero
+        raise DeconvolutionError("Negative or zero sensitivity, skipping: {}".format(tr.id))
 
     if dt <= 0.:
         # I guess this should never occur, but I was getting division by
-        # zero erros in RTdeconv due either this or G being equal to zero
-        raise RTdeconvError("Negative or sampling rate, skipping: {}".format(tr.id))
+        # zero erros in deconvolve_and_filter due either this or G being equal to zero
+        raise DeconvolutionError("Negative or sampling rate, skipping: {}".format(tr.id))
 
     if len(tr.data) <= 2:
         # Traces of length <=2 were throwing runtime exceptions; so we need to
         # explicitly skip these traces.
-        raise RTdeconvError("Trace too short to deconvolve, skipping: {}".format(tr.id))
+        raise DeconvolutionError("Trace too short to deconvolve, skipping: {}".format(tr.id))
 
     data = np.array(tr.data,dtype='float')
-    sta  = tr.stats.station
 
-    if data_type == 'raw':
-        baseline = np.mean(data[:int(baselinelen/dt)])
-        nwin = int(taperlen*len(data)/100.)
+    baseline = np.mean(data[:int(baselinelen/dt)])
+    nwin = int(taperlen*len(data)/100.)
 
-        if len(data) < 2*nwin: nwin = len(data)
-        data -= baseline
+    if len(data) < 2*nwin: nwin = len(data)
+    data -= baseline
 
-        taper = 0.5*(1.-np.cos(np.pi*np.linspace(0.,1.,nwin)))
-        data[:nwin]*= taper
+    taper = 0.5*(1.-np.cos(np.pi*np.linspace(0.,1.,nwin)))
+    data[:nwin]*= taper
 
-        datap1 = data[1:]
-        datap2 = data[2:]
+    datap1 = data[1:]
+    datap2 = data[2:]
 
-        # Acceleration + double integration
-        c0 = 1./G/dt
-        c1 = -2.*(1. + h*om0*dt)/G/dt
-        c2 = (1. + 2.*h*om0*dt + dt*dt*om0*om0)/G/dt
+    # Acceleration + double integration
+    c0 = 1./G/dt
+    c1 = -2.*(1. + h*om0*dt)/G/dt
+    c2 = (1. + 2.*h*om0*dt + dt*dt*om0*om0)/G/dt
 
-        aux = c2*datap2 + c1*datap1[:-1] + c0*data[:-2]
-        accel = aux[0]*np.ones(len(data))
-        accel[2:] = np.cumsum(aux)
-    elif data_type == 'accel':
-        accel = data
+    aux = c2*datap2 + c1*datap1[:-1] + c0*data[:-2]
+    accel = aux[0]*np.ones(len(data))
+    accel[2:] = np.cumsum(aux)
 
     accel = bandpassfilter(accel, dt, corners, fmin, fmax)
 
     vel = np.zeros(len(data))
-    vel[1:] = 0.5*dt*np.cumsum(accel[:-1]+accel[1:])
+    vel[1:] = 0.5*dt*np.cumsum(accel[:-1] + accel[1:]) # type: ignore
 
     dis = np.zeros(len(data))
-    dis[1:] = 0.5*dt*np.cumsum(vel[:-1]+vel[1:])
-
-    if get_coef:
-        return dis, (c0,c1,c2)
+    dis[1:] = 0.5*dt*np.cumsum(vel[:-1] + vel[1:])
 
     return dis
 
@@ -965,10 +928,6 @@ def core_inversion(
         dist = locations2degrees(hyplat, hyplon, trlat, trlon)
         distm, azi, bazi  =  gps2dist_azimuth(hyplat, hyplon, trlat, trlon)
         t_p = ptimes.get(trid)
-
-        if not t_p:
-            from obspy.taup.taup import getTravelTimes
-            t_p =  getTravelTimes(dist,hypdep)[0]['time']
 
         # Select greens function and perform moment tensor rotation in the azimuth
         # DETAIL: The greens functions are stored for zero azimuth (which we can do

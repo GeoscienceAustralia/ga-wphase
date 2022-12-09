@@ -70,10 +70,12 @@ class WPhaseSettings(BaseSettings):
     response."""
 
     WPHASE_CUTOFF: float = 15
-    """Time cutoff, seconds/degree from t_p for the Wphase window."""
+    """Time cutoff factor: if we call this k, then the selected time window for
+    each trace will end at t_p + k*d where t_p is the theoretical p-wave
+    arrival time and d is the hypocentral distance in degrees."""
 
     MEDIAN_REJECTION_COEFF: Tuple[float, float] = (0.1, 3)
-    """traces with peak-to-peak amplitude outside of the range
+    """Traces with peak-to-peak amplitude outside of the range
     [median_rejection_coeff[0] * m, median_rejection_coeff[1] * m], where m
     is the median peak-to-peak amplitude over all stations, will be rejected"""
 
@@ -91,9 +93,10 @@ class WPhaseSettings(BaseSettings):
 
     MISFIT_TOL_SEQUENCE: List[float] = [300, 200, 100]
     """Channels where the misfits (100*sqrt(sum(synthetic-observed)^2 /
-    sum(synthetic)^2)) are greater than the first element of this sequence
-    will be rejected. If any stations remain, then those with misfits greater
-    than the second element will be rejected, and so on."""
+    sum(synthetic)^2)) are greater than the first element of this sequence will
+    be rejected. If any stations remain, then the inversion will be repeated
+    with these stations, and those with misfits greater than the second element
+    will be rejected, and so on."""
 
     MINIMUM_FITTING_CHANNELS: float = 10
     """Minimum number of well-fitting channels required for inversion to pass

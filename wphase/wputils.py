@@ -256,7 +256,7 @@ def post_process_wpinv(
         traces = output.OL1.used_traces
         prelim = output.OL1.preliminary_calc_details
         fname = os.path.join(working_dir, settings.PRELIM_FIT_PREFIX) + ".png"
-        plot_preliminary_fit(eqinfo, filename=fname, **prelim)
+        plot_preliminary_fit(eqinfo, filename=fname, **prelim.dict())
     else:
         logger.warning("Could not find preliminary calculation details in result.")
 

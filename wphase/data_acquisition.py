@@ -102,7 +102,7 @@ def build_metadata_dict(
 
 def get_waveforms(
         eqinfo: Event,
-        META,
+        metadata,
         wp_tw_factor=15,
         t_beforeP=1500., # seconds
         t_afterWP=60.,   # seconds
@@ -125,9 +125,6 @@ def get_waveforms(
     :param float dist_range: A pair of floats specifying the min/max epicentral
         distance (in degrees) to be considered; i.e. stations outside of this
         range will be excluded.
-    :param bool add_ptime: Should the p arrival time (with respect to the origin
-        time) be included in each stations metadata. Including this should
-        result in a significant speedup.
     :param int bulk_chunk_len: Maximum number of entries (channels) to be
         included in a single request to a metadata service.
     :param prune_cutoffs: List of pruning (distance) cutoffs passed to
@@ -138,18 +135,16 @@ def get_waveforms(
         and end times of the time window required by Wphase.
     :param client: An Obspy FDSN client.
 
-    :return: If *add_ptime* is *True*, then return a two element tuple containing:
+    :return: Returns a two element tuple containing:
         #. An :py:class:`obspy.core.stream.Stream` containing the data.
-        #. A new metadata dictionary containing the p arrival time for each trace.
-
-        If *add_ptime* is *False* return the stream only.
+        #. A dictionary mapping waveform stream IDs to theoretical P-wave arrival times.
     '''
 
     # Obtaining stations within the distance range only. trlist_in_dist_range will contain
     # the ids of channels which are within the specified distance range.
     trlist_in_dist_range = []
     tr_dists_in_range = []
-    for trid, stmeta in META.items():
+    for trid, stmeta in metadata.items():
         stlat, stlon = stmeta["latitude"], stmeta["longitude"]
         dist = locations2degrees(eqinfo.latitude, eqinfo.longitude, stlat, stlon)
         if dist >= dist_range[0] and dist <= dist_range[1]:
@@ -161,17 +156,11 @@ def get_waveforms(
     # {
     #   <channel-id>: (<obspy.core.utcdatetime.UTCDateTime>, <obspy.core.utcdatetime.UTCDateTime>)
     # }
-    #
-    # new_META:
-    # {
-    #   <channel-id>: original metadata for channel and extra key 'ptime'
-    # }
+    ptimes = {}
     if req_times is None:
         req_times = {}
-        if add_ptime:
-            new_META = {}
         for i_trid, trid in enumerate(trlist_in_dist_range):
-            stmeta = META[trid]
+            stmeta = metadata[trid]
             dist = tr_dists_in_range[i_trid]
             t_p = getPtime(dist, eqinfo.depth)
             t_p_UTC = eqinfo.time + t_p
@@ -179,9 +168,7 @@ def get_waveforms(
             t_wp_end_UTC = t_p_UTC + t_wp_end
             t1 = t_p_UTC - t_beforeP
             t2 = t_wp_end_UTC + t_afterWP
-            if add_ptime:
-                new_META[trid] = stmeta
-                new_META[trid]['ptime'] = t_p
+            ptimes[trid] = t_p
             req_times[trid] = [t1, t2]
 
     # ---------------get waveforms--------------
@@ -189,7 +176,7 @@ def get_waveforms(
     if prune_cutoffs is not None:
         trlist_in_dist_range = station_pruningNEZ(
             trlist_in_dist_range,
-            new_META, prune_cutoffs)
+            metadata, prune_cutoffs)
 
     #reject incomplete traces:
     if reject_incomplete:
@@ -248,10 +235,7 @@ def get_waveforms(
         for tr in st:
             tr.data = np.ascontiguousarray(tr.data)
 
-    if add_ptime:
-        return st, new_META
-    else:
-        return st
+    return st, ptimes
 
 def remove_gappy_traces(st):
     """Given an obspy Stream, remove any traces with gaps.

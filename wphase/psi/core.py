@@ -8,7 +8,7 @@ from collections import OrderedDict
 import sys, os, glob, traceback, logging
 from concurrent.futures import ProcessPoolExecutor
 from timeit import default_timer as timer
-from typing import Sequence
+from typing import Mapping, NamedTuple, Optional, Sequence
 import numpy as np
 from numpy.linalg import lstsq
 from scipy.interpolate import interp1d
@@ -54,6 +54,7 @@ def wpinv(
     metadata: dict,
     event: Event,
     gfdir: str,
+    ptimes: Mapping[str, float],
     OL: int = 1,
     processes: int = None,
 ):
@@ -206,7 +207,7 @@ def wpinv(
 
         # if p-arrival time is not calculated, then calculate it.
         # WARNING: this can be very slow in new versions of obspy.
-        t_p = trmeta.get('ptime')
+        t_p = ptimes.get(tr.id)
         if not t_p:
             from obspy.taup.taup import getTravelTimes
             t_p =  getTravelTimes(dist,hypdep)[0]['time']
@@ -372,7 +373,7 @@ def wpinv(
         trlat = trmeta['latitude']
         trlon = trmeta['longitude']
         dist = locations2degrees(hyplat, hyplon, trlat, trlon)
-        t_p = trmeta.get('ptime')
+        t_p = ptimes.get(trid)
         if not t_p:
             from obspy.taup.taup import getTravelTimes
             t_p =  getTravelTimes(dist,hypdep)[0]['time']
@@ -484,6 +485,7 @@ def wpinv(
         gfdir=gfdir,
         OnlyGetFullGF=True,
         max_t_d=settings.MAXIMUM_TIME_DELAY,
+        ptimes=ptimes,
     )
 
     # inputs for the TIME DELAY search
@@ -511,7 +513,8 @@ def wpinv(
         metadata,
         trlist,
         gfdir=gfdir,
-        return_gfs=True)
+        return_gfs=True,
+        ptimes=ptimes)
 
     # Remove bad traces
     for tol in settings.MISFIT_TOL_SEQUENCE:
@@ -539,7 +542,8 @@ def wpinv(
             metadata,
             trlist,
             gfdir=gfdir,
-            return_gfs=True
+            return_gfs=True,
+            ptimes=ptimes,
         )
 
     syn = (M[0]*GFmatrix[:,0] + M[1]*GFmatrix[:,1] +
@@ -579,7 +583,7 @@ def wpinv(
 
     grid_search_inputs = [
         (t_d, (lat, lon, hypdep), (Ta, Tb), MRF,
-         observed_displacements, trlen, metadata, trlist, greens)
+         observed_displacements, trlen, metadata, trlist, greens, {"ptimes": ptimes})
         for lat, lon in latlons
     ]
 
@@ -595,7 +599,7 @@ def wpinv(
 
     depth_search_inputs = [
         (t_d, (cenlat, cenlon, depth), (Ta,Tb),
-         MRF, observed_displacements, trlen, metadata, trlist, greens)
+         MRF, observed_displacements, trlen, metadata, trlist, greens, {"ptimes": ptimes})
         for depth in deps_grid
     ]
 
@@ -613,7 +617,7 @@ def wpinv(
     M, misfit, GFmatrix = core_inversion(t_d, (cenlat, cenlon, cendep),
                                          (Ta,Tb), MRF, observed_displacements,
                                          trlen, metadata, trlist, gfdir=gfdir,
-                                         return_gfs=True)
+                                         return_gfs=True, ptimes=ptimes)
 
     syn = (M[0]*GFmatrix[:,0] + M[1]*GFmatrix[:,1]
           + M[3]*GFmatrix[:,2] + M[4]*GFmatrix[:,3]
@@ -929,6 +933,7 @@ def core_inversion(
     metadata,
     trlist,
     gfdir,
+    ptimes,
     return_gfs=False,
     residuals=False,
     OnlyGetFullGF=False,
@@ -1006,7 +1011,7 @@ def core_inversion(
 
         dist = locations2degrees(hyplat, hyplon, trlat, trlon)
         distm, azi, bazi  =  gps2dist_azimuth(hyplat, hyplon, trlat, trlon)
-        t_p =  trmeta.get('ptime')
+        t_p = ptimes.get(trid)
 
         if not t_p:
             from obspy.taup.taup import getTravelTimes

@@ -187,8 +187,6 @@ def runwphase(
     if client is None and (inventory is None or waveforms is None):
         raise ValueError("If not providing client, you must provide inventory and waveforms.")
 
-    meta_t_p = {}
-
     if eqinfo is None:
         raise ValueError('eqinfo cannot be None')
 
@@ -217,7 +215,7 @@ def runwphase(
 
     try:
         # load the data for from the appropriate server
-        streams, meta_t_p_ = get_waveforms(
+        streams, ptimes = get_waveforms(
             eqinfo,
             metadata,
             wp_tw_factor = wp_tw_factor,
@@ -237,12 +235,10 @@ def runwphase(
 
             logger.info('%d traces remaining after restricting to Z', len(streams))
 
-        meta_t_p.update(meta_t_p_)
-
         if output_dir and pickle_inputs:
             streams_pickle_file = os.path.join(output_dir, 'streams.pkl')
             with open(streams_pickle_file, 'wb') as pkle:
-                pickle.dump((meta_t_p, streams), pkle)
+                pickle.dump((metadata, streams), pkle)
 
         # do and post-process the inversion
         profiler = WPInvProfiler(output_dir) if settings.PROFILE else NoProfiler()
@@ -252,9 +248,10 @@ def runwphase(
                 with LogCapture(logger, logging.WARNING) as capture:
                     wphase_output = wpinv(
                         streams,
-                        meta_t_p,
+                        metadata,
                         eqinfo,
                         greens_functions_dir,
+                        ptimes=ptimes,
                         processes = n_workers_in_pool,
                         OL = processing_level)
             except InversionError as e:
@@ -273,7 +270,7 @@ def runwphase(
                     WPOL = processing_level,
                     working_dir = output_dir,
                     eqinfo = eqinfo,
-                    metadata = meta_t_p,
+                    metadata = metadata,
                     make_maps=output_dir and make_maps,
                     make_plots=output_dir and make_plots)
             except Exception as e:

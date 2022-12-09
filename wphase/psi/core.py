@@ -2,21 +2,26 @@
 """Core implementation of the W-Phase inversion."""
 from __future__ import absolute_import, print_function
 
-from builtins import str
-from builtins import range
+import glob
+import logging
+import os
+import sys
+import traceback
+from builtins import range, str
 from collections import OrderedDict
-import sys, os, glob, traceback, logging
 from concurrent.futures import ProcessPoolExecutor
 from timeit import default_timer as timer
 from typing import Mapping, NamedTuple, Optional, Sequence
-import numpy as np
-from numpy.linalg import lstsq
-from scipy.interpolate import interp1d
-from scipy.signal import triang
-from scipy import ndimage
-from scipy.signal import detrend
+
 import h5py
-from obspy.core import read, Stream, UTCDateTime
+import numpy as np
+import pandas as pd
+from numpy.linalg import lstsq
+from obspy import Trace
+from obspy.core import Stream, UTCDateTime, read
+from scipy import ndimage
+from scipy.interpolate import interp1d
+from scipy.signal import detrend, triang
 
 try:
     from obspy.geodetics import locations2degrees
@@ -37,6 +42,7 @@ from wphase import settings
 from .greens import GreensFunctions
 from .bandpass import bandpassfilter
 from .model import (
+    ChannelMetadata,
     WPhaseResult,
     OL1Result,
     OL2Result,
@@ -49,44 +55,39 @@ from .seismoutils import azimuthal_gap, ltrim, rot_12_NE
 
 logger = logging.getLogger(__name__)
 
+_Vpaz2freq = np.vectorize(paz_2_amplitude_value_of_freq_resp)
+def amplitude_at_frequency(metadata: ChannelMetadata, frequency: float):
+    """Given metadata for a seismometer channel, return the amplitude response
+    at a given frequency."""
+    if metadata.transfer_function == "B":
+        frequency = frequency / (2*np.pi)
+    elif metadata.transfer_function != "A":
+        raise UnknownTransferFunction(metadata.transfer_function)
+    return _Vpaz2freq({
+        "poles": metadata.poles,
+        "zeros": metadata.zeros,
+        "gain": metadata.gain,
+    }, frequency)
+
 def wpinv(
-    st: Stream,
-    metadata: dict,
+    stream: Stream,
+    metadata: Mapping[str, ChannelMetadata],
     event: Event,
     gfdir: str,
     ptimes: Mapping[str, float],
     OL: int = 1,
-    processes: int = None,
+    processes: Optional[int] = None,
 ):
     """
     This function is the main function that will compute the inversion. For
     details of the the algorithm and logic, see `here
     <https://pubs.er.usgs.gov/publication/70045140>`_.
 
-    :param st: The waveform data to be used as raw input
-    :type st: :py:class:`obspy.core.stream.Stream`
+    :param stream: The waveform data to be used as raw input
+    :type stream: :py:class:`obspy.core.stream.Stream`
 
     :param dict metadata: Station metadata. Each key is a station ID and
-        the values are a dictionaries with the metadata. Each dictionary
-        should look like:
-
-        .. code-block:: python
-
-            {'azimuth': 0.0,
-                'dip': -90.0,
-                'elevation': 19.0,
-                'gain': 59680600.0,
-                'latitude': 2.0448,
-                'longitude': -157.4457,
-                'poles': [
-                    (-0.035647-0.036879j),
-                    (-0.035647+0.036879j),
-                    (-251.33+0j),
-                    (-131.04-467.29j),
-                    (-131.04+467.29j)],
-                'sensitivity': 33554000000.0,
-                'transfer_function': 'A',
-                'zeros': [0j, 0j]}
+        the values are instances of wphase.psi.model.ChannelMetadata.
 
     :param dict eqINFO: A dictionary with the preliminary event information,
         namely with keys *lat*, *lon*, *time*, *mag* (optional), and *depth*.
@@ -95,36 +96,7 @@ def wpinv(
          magnitude, 2 perform an inversion using PDE location and 3
          uses an optimized centroid's location.
 
-    :return: What is returned depends on the processing level (*OL*), as described below.
-
-        - OL = 1, a tuple with elements:
-            0. Preliminary Mw magnitude of the event.
-            #. List with the stations contributing to the preliminary
-                magnitude. (epicentral order)
-            #. List with the peak-to-peak amplitude (meters) of each station
-                contributing to the preliminary magnitude (epicentral order).
-
-        - OL = 2, a tuple with elements:
-            0. Six component of the moment tensor in Nm,
-                ['RR', 'PP', 'TT', 'TP' , 'RT', 'RP'] (ready to be plotted with
-                Beachball from ObsPy).
-            #. Array with the concatenated traces of observed displacements
-                sorted according to epicentral distance.
-            #. Array with the concatenated traces of synthetic seismograms
-                sorted according to epicentral distance.
-            #. List with the stations contributing to the final solution,
-                sorted according to epicentral distance.
-            #. List with the lengths of each trace in trlist. Note that
-                sum(trlen) = len(observed_displacements) = len(syn).
-
-        - OL = 3, Same as OL2 plus:
-            5. Optimal centroid location (lat, lon, dep).
-            #. Time delay/Half duration of the source (secs).
-            #. latitude-longitude grid used to find the optimal centroid
-                location
-            #. Inversion result for each grid point in latlons
-            #. Dictionary with relavant information about the data processing
-                so it can redone easily outside this function.
+    :return WPhaseResult:
     """
     #############Output Level 1#############################
     #############Preliminary magnitude:#####################
@@ -141,35 +113,27 @@ def wpinv(
     # convert to angular frequency
     omega = freq*2.*np.pi
 
-    # create a function to compute the amplitude of the response from poles and
-    # zeros.
-    Vpaz2freq = np.vectorize(paz_2_amplitude_value_of_freq_resp)
-
     hyplat = event.latitude
     hyplon = event.longitude
     hypdep = event.depth
     orig = UTCDateTime(event.time)
 
-    # Deal with extremly shallow preliminary hypocenter
+    # Deal with extremly shallow preliminary hypocenters by clamping to 10km
     if hypdep < 10.:
         hypdep = 10.
 
     #In case of multiple locations we favor
     # '00'. This may be improved if we select the one with the longer period
     # sensor.
-    st_sel = st.select(location = '00')
-    st_sel+= st.select(location = '--')
-    st_sel+= st.select(location = '') #Check this.
+    st_sel = stream.select(location = '00')
+    st_sel += stream.select(location = '--')
+    st_sel += stream.select(location = '') #Check this.
 
     # We don't really care exactly what ordering obspy chooses
     # here; we just want a deterministic ordering so we can compare runs.
     st_sel.sort()
 
-    #st_sel = st_sel.select(component = 'Z')
-    #We also want to select stations with one location code which is not the
-    #default (see above).
-
-    logger.info('Initial number of traces: using %d with default locations (of %d total)', len(st_sel), len(st))
+    logger.info('Initial number of traces: using %d with default locations (of %d total)', len(st_sel), len(stream))
 
     # rotate the horizontal components to geographical north or east
     st_sel = rot_12_NE(st_sel, metadata)
@@ -194,9 +158,9 @@ def wpinv(
     # Instrument deconvolution and bandpass filtering:
     i = 0
     for tr in st_sel_prem_mag:
-        trmeta =  metadata[tr.id]
-        trlat = trmeta['latitude']
-        trlon = trmeta['longitude']
+        trmeta = metadata[tr.id]
+        trlat = trmeta.latitude
+        trlon = trmeta.longitude
         tr.data = np.array(tr.data, dtype=float)
 
         # compute distance in degrees between 2 locations
@@ -219,19 +183,16 @@ def wpinv(
         t1 = orig + t_p
         t2 = t1 + dist*settings.WPHASE_CUTOFF
 
-        # accounting for the units of the transfer function in the instrument response... see README.
-        if trmeta['transfer_function'] == "B":
-            AmpfromPAZ  = Vpaz2freq(trmeta,freq/2./np.pi)  # hz to rad*hz
-        elif trmeta['transfer_function'] == "A":
-            AmpfromPAZ  = Vpaz2freq(trmeta,freq)
-        else:
+        try:
+            response_amplitude = amplitude_at_frequency(trmeta, freq)
+        except UnknownTransferFunction:
             logger.warning("Unknown transfer function. Skipping %s", tr.id)
             trlist.remove(tr.id)
             continue
 
         # Fitting the instrument response and getting coefficients
         response_coefficients = fit_instrument_response(
-            trmeta['sensitivity'], freq, AmpfromPAZ
+            trmeta.sensitivity, freq, response_amplitude
         )
         if response_coefficients is None:
             logger.warning("Impossible to get Coeff. Skipping %s", tr.id)
@@ -240,12 +201,12 @@ def wpinv(
         else:
             om0, h, G = response_coefficients
 
-        AmpfromCOEFF= np.abs(omega*omega / \
+        amplitude_from_coeff = np.abs(omega*omega / \
                 (omega*omega + 2j*h*om0*omega - om0*om0))
 
         # L2 norm:
-        misfit = 100*np.linalg.norm(AmpfromPAZ-AmpfromCOEFF) \
-                / np.linalg.norm(AmpfromPAZ)
+        misfit = 100*np.linalg.norm(response_amplitude-amplitude_from_coeff) \
+                / np.linalg.norm(response_amplitude)
 
         if misfit > settings.RESPONSE_MISFIT_TOL:
             logger.warning('Bad fitting for response (misfit=%e). Skipping %s', misfit, tr.id)
@@ -368,10 +329,10 @@ def wpinv(
     # Preparing the data:
     DIST = []
     DATA_INFO = {} #Minimum info to be able to filter the displacements afterwards
-    for itr, trid in enumerate(trlist[:]):
-        trmeta =  metadata[trid]
-        trlat = trmeta['latitude']
-        trlon = trmeta['longitude']
+    for trid in trlist[:]:
+        trmeta = metadata[trid]
+        trlat = trmeta.latitude
+        trlon = trmeta.longitude
         dist = locations2degrees(hyplat, hyplon, trlat, trlon)
         t_p = ptimes.get(trid)
         if not t_p:
@@ -385,18 +346,15 @@ def wpinv(
         tr = st_sel.select(id = trid)[0]
 
         tr.data = np.array(tr.data, dtype=float)
-        tf = trmeta['transfer_function']
-        if tf == "B":
-            AmpfromPAZ  = Vpaz2freq(trmeta,freq/2./np.pi)  # hz to rad*hz
-        elif tf == "A":
-            AmpfromPAZ  = Vpaz2freq(trmeta,freq)
-        else:
-            logger.warning("%s: Unknown transfer function %s. Skipping this trace", tr.id, tf)
+        try:
+            response_amplitude = amplitude_at_frequency(trmeta, freq)
+        except UnknownTransferFunction:
+            logger.warning("Unknown transfer function. Skipping %s", tr.id)
             trlist.remove(tr.id)
             continue
 
         response_coefficients = fit_instrument_response(
-            trmeta['sensitivity'], freq, AmpfromPAZ
+            trmeta.sensitivity, freq, response_amplitude
         )
         if response_coefficients is None:
             logger.warning("%s: Could not fit instrument response. Skipping this trace", tr.id)
@@ -1001,13 +959,8 @@ def core_inversion(
     #### Inversion:
     for i, trid in enumerate(trlist):
         trmeta = metadata[trid]
-        trlat = trmeta['latitude']
-        trlon = trmeta['longitude']
-
-        try:
-            sta  = trmeta['sta']
-        except KeyError:
-            sta = None
+        trlat = trmeta.latitude
+        trlon = trmeta.longitude
 
         dist = locations2degrees(hyplat, hyplon, trlat, trlon)
         distm, azi, bazi  =  gps2dist_azimuth(hyplat, hyplon, trlat, trlon)

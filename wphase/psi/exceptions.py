@@ -16,3 +16,7 @@ class InversionError(Exception):
 
 class RTdeconvError(Exception):
     """An error encountered during deconvolution of waveforms."""
+
+class UnknownTransferFunction(Exception):
+    """An unknown transfer function was encountered in station inventory."""
+

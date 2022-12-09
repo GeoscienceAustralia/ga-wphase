@@ -350,8 +350,8 @@ def post_process_wpinv(
     if traces and make_maps:
         try:
             # Make a plot of the station distribution
-            lats = [metadata[trid]['latitude'] for trid in traces]
-            lons = [metadata[trid]['longitude'] for trid in traces]
+            lats = [metadata[trid].latitude for trid in traces]
+            lons = [metadata[trid].longitude for trid in traces]
             stationDistPrefix = os.path.join(
                 working_dir,
                 settings.STATION_DISTRIBUTION_PREFIX)

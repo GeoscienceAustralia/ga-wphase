@@ -2,14 +2,15 @@
     with obspy
 '''
 from __future__ import absolute_import, print_function
+from typing import Iterable, List, Literal, Mapping, Tuple, Union
 
 from future import standard_library
-from obspy.core.stream import Stream
+from obspy import Stream
 standard_library.install_aliases()
-from builtins import range
-import urllib.request, urllib.error, urllib.parse, sys
+
+from wphase.psi.model import ChannelMetadata
+
 import logging
-import math
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -26,17 +27,22 @@ except ImportError:
 
 
 
-def get_azimuths(meta, trlist, loc):
+def get_azimuths(meta: Mapping[str, ChannelMetadata], trlist: Iterable[str], loc: Tuple[float, float]):
     '''
     Return the azimuths in degrees given metadata dict, list of
     station ids and location of the epicentre.
     '''
     return [
-        gps2dist_azimuth(loc[0], loc[1], meta[t]["latitude"], meta[t]["longitude"])[2]
+        gps2dist_azimuth(loc[0], loc[1], meta[t].latitude, meta[t].longitude)[2]
         for t in trlist
     ]
 
-def station_pruning(meta, trlist, cutoffs=[1.,2.,5], units='deg'):
+def station_pruning(
+    meta: Mapping[str, ChannelMetadata],
+    trlist: List[str],
+    cutoffs: List[float] = [1.,2.,5],
+    units: Union[Literal["deg"], Literal["km"]] = 'deg',
+):
     '''
     Given a list of id trlist and its respective metadata dictionary meta, it
     will return a reduced list containing only stations at a certain minimum distance
@@ -52,13 +58,15 @@ def station_pruning(meta, trlist, cutoffs=[1.,2.,5], units='deg'):
 
     for cutoff in cutoffs:
         for i_trid, trid1 in enumerate(trlist[:-1]):
-            for j_trid,trid2 in enumerate(trlist[i_trid + 1:]):
-                lat1, lon1  = meta[trid1]['latitude'], meta[trid1]['longitude']
-                lat2, lon2  = meta[trid2]['latitude'], meta[trid2]['longitude']
+            for trid2 in trlist[i_trid + 1:]:
+                lat1, lon1  = meta[trid1].latitude, meta[trid1].longitude
+                lat2, lon2  = meta[trid2].latitude, meta[trid2].longitude
                 if units == 'deg':
                     dist = locations2degrees(lat1,lon1,lat2,lon2)
                 elif units == 'km':
                     dist = 1.e-3*gps2dist_azimuth(lat1,lon1,lat2,lon2)[0]
+                else:
+                    raise ValueError("units must be either deg or km")
 
 
                 if dist <= cutoff:
@@ -70,7 +78,7 @@ def station_pruning(meta, trlist, cutoffs=[1.,2.,5], units='deg'):
     return  trlist
 
 
-def azimuthal_gap(azis):
+def azimuthal_gap(azis: Iterable[float]):
     """Compute the (largest) azimuthal gap of a list of azimuths.
 
     Parameters
@@ -78,22 +86,22 @@ def azimuthal_gap(azis):
     azis : Iterable[float]
         Station azimuths in degrees.
     """
-    if len(azis) < 2:
+    azimuths = np.asarray(azis) % 360
+    if len(azimuths) < 2:
         return 360.
-    azis = np.asarray(azis) % 360
-    if len(azis.shape) != 1:
+    if len(azimuths.shape) != 1:
         raise ValueError("Input to azimuthal_gap must be a one-dimensional array!")
-    azis.sort()
-    gaps = (azis - np.roll(azis, 1)) % 360
+    azimuths.sort()
+    gaps = (azimuths - np.roll(azimuths, 1)) % 360
     return gaps.max()
 
 
-def ltrim(data, starttime, delta):
+def ltrim(data: np.ndarray, starttime: float, delta: float):
     '''
     Left trimming similar to obspy but when *data* is a np array.
 
     :param data: array to trim, with time being the last axis.
-    :type data: :py:class:`numpy.array`.
+    :type data: :py:class:`numpy.ndarray`.
     :param numeric starttime: The amount of time to trim from the front of the trace in seconds.
     :param float delta: Sampling interval in seconds.
 
@@ -107,7 +115,7 @@ def ltrim(data, starttime, delta):
         return data[..., i_of:]
 
 
-def rot_12_NE(st: Stream, meta):
+def rot_12_NE(st: Stream, meta: Mapping[str, ChannelMetadata]):
     '''
     Performs a  12 -> NE rotation.
 
@@ -133,7 +141,7 @@ def rot_12_NE(st: Stream, meta):
         timeB = min(tr1.stats.endtime,tr2.stats.endtime)
         tr1.trim(timeA,timeB)
         tr2.trim(timeA,timeB)
-        azi = meta[id1]['azimuth']
+        azi = meta[id1].azimuth
         tr1.data, tr2.data = rot2D(tr1.data,tr2.data,-azi)
 
     return st

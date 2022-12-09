@@ -5,7 +5,7 @@ follow a fixed schema to work with other GA systems, so we're kinda stuck with
 it."""
 
 
-from typing import List, Optional, OrderedDict, Tuple, TYPE_CHECKING
+from typing import Callable, List, Literal, Mapping, Optional, OrderedDict, Tuple, TYPE_CHECKING, Union
 
 import numpy as np
 from obspy import UTCDateTime as _UTCDateTime
@@ -30,9 +30,10 @@ else:
 
 class Data(BaseModel):
     class Config:
-        json_encoders = {
+        json_encoders: Mapping[type, Callable] = {
             _UTCDateTime: lambda t: str(t).replace("T", " ").replace("Z", ""),
             np.ndarray: np.ndarray.tolist,
+            complex: lambda z: (z.imag, z.real)
         }
         # since we have some non-serialized ndarray fields:
         arbitrary_types_allowed = True
@@ -210,3 +211,27 @@ class WPhaseResult(Data):
 
     def add_warning(self, warning):
         self.Warnings.append(str(warning))
+
+
+class ChannelMetadata(Data):
+    """Metadata for a single waveform channel."""
+    azimuth: float
+    dip: float
+    elevation: float
+    gain: float
+    latitude: float
+    """Latitude of station in degrees"""
+    longitude: float
+    """Longitude of station in degrees"""
+    sensitivity: float
+    """Seismometer sensitivity"""
+    transfer_function: Union[Literal["A"], Literal["B"], None]
+    """Type (A or B) of the transfer function.
+
+    Type A uses frequency units of rads/second, while Type B uses Hz."""
+    zeros: List[complex]
+    """Zeroes of the transfer function"""
+    poles: List[complex]
+    """Poles of the transfer function"""
+    sampling_rate: float
+    """Samples per second"""

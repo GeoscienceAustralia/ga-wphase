@@ -1,16 +1,12 @@
 from wphase.psi.model import Event
+from typing import Dict, List, Mapping, Tuple
+from wphase.psi.model import ChannelMetadata, Event
 
 import logging
-import pickle as pickle
-from collections import Counter, defaultdict
+from collections import Counter
 import numpy as np
 import obspy
 from obspy.core import UTCDateTime, Stream
-
-try:
-    from obspy.clients.fdsn import Client
-except ImportError:
-    from obspy.fdsn import Client
 
 try:
     from obspy.geodetics import locations2degrees
@@ -65,10 +61,10 @@ def build_metadata_dict(
                 return False
         return True
 
-    transfer_function_mapping = defaultdict(lambda: "Unknown", {
+    transfer_function_mapping = {
         "LAPLACE (RADIANS/SECOND)": "A",
         "LAPLACE (HERTZ)": "B",
-    })
+    }
     for net in inv:
         for sta in net:
             for cha in sta:
@@ -79,7 +75,7 @@ def build_metadata_dict(
                     resp = cha.response
                     paz = resp.get_paz()
 
-                    metadata[trid] = dict(
+                    metadata[trid] = ChannelMetadata(
                         latitude=cha.latitude,
                         longitude=cha.longitude,
                         elevation=cha.elevation,
@@ -87,7 +83,7 @@ def build_metadata_dict(
                         dip=cha.dip,
                         sensitivity=resp.instrument_sensitivity.value,
                         sampling_rate=cha.sample_rate,
-                        transfer_function=transfer_function_mapping[paz.pz_transfer_function_type],
+                        transfer_function=transfer_function_mapping.get(paz.pz_transfer_function_type),
                         zeros=paz.zeros,
                         poles=paz.poles,
                         gain=paz.normalization_factor,
@@ -115,7 +111,7 @@ def get_waveforms(
         reject_incomplete=False,
         req_times=None,
         waveforms=None,
-        save_path=None):
+        save_path=None) -> Tuple[Stream, Dict[str, float]]:
     '''
     This function will get the waveforms associated with an event to
     perform a WP inversion.
@@ -145,7 +141,7 @@ def get_waveforms(
     trlist_in_dist_range = []
     tr_dists_in_range = []
     for trid, stmeta in metadata.items():
-        stlat, stlon = stmeta["latitude"], stmeta["longitude"]
+        stlat, stlon = stmeta.latitude, stmeta.longitude
         dist = locations2degrees(eqinfo.latitude, eqinfo.longitude, stlat, stlon)
         if dist >= dist_range[0] and dist <= dist_range[1]:
             trlist_in_dist_range.append(trid)
@@ -255,7 +251,7 @@ def remove_gappy_traces(st):
     return st
 
 
-def station_pruningNEZ(trlist_pre, META, cutoffs):
+def station_pruningNEZ(trlist_pre: List[str], metadata: Mapping[str, ChannelMetadata], cutoffs):
     '''
     Station pruning based on distance cutoffs. This version works when more
     one channel per station is present in st (Stream with traces to be pruned).
@@ -265,7 +261,7 @@ def station_pruningNEZ(trlist_pre, META, cutoffs):
     rather than each **channel id**.
 
     :param list trlest_pre: List of channel ids.
-    :param dict META: Channel metadata dictionary, keyed by channel id.
+    :param dict metadata: Channel metadata dictionary, keyed by channel id.
     :param cutoffs: List of pruning (distance) cutoffs passed to
         :py:func:`seismoutils.station_pruning`
     :type cutoffs: list of floats
@@ -284,7 +280,7 @@ def station_pruningNEZ(trlist_pre, META, cutoffs):
             trlist_1cha.append(trid)
 
     # We pass the meta data for the channel because it contains the location
-    trlist_1cha_short = SU.station_pruning(META, trlist_1cha, cutoffs=cutoffs)
+    trlist_1cha_short = SU.station_pruning(metadata, trlist_1cha, cutoffs=cutoffs)
     sta_list_short = [trid.split('.')[:2] for trid in trlist_1cha_short]
     st_short_list = [trid for trid in trlist_pre if trid.split('.')[:2] in sta_list_short]
     return st_short_list

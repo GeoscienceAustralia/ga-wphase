@@ -527,7 +527,7 @@ def wpinv(
         if len(trlist) < settings.MINIMUM_FITTING_CHANNELS:
             msg = "Only {} channels with possibly acceptable fits. Aborting.".format(len(trlist))
             logger.error(msg)
-            raise InversionError(msg)
+            raise InversionError(msg, result=result)
 
         M, misfit, GFmatrix = core_inversion(
             t_d,

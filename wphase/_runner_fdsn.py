@@ -258,6 +258,8 @@ def runwphase(
                         processes = n_workers_in_pool,
                         OL = processing_level)
             except InversionError as e:
+                if e.result is not None:
+                    wphase_output = e.result
                 logger.error("Inversion Error: %s", e)
                 wphase_output.add_warning(e)
 

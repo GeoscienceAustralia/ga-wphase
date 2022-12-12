@@ -338,12 +338,12 @@ def wpinv(
         if not t_p:
             from obspy.taup.taup import getTravelTimes
             t_p =  getTravelTimes(dist,hypdep)[0]['time']
-        dt = tr.stats.delta
 
         # W-phase time window
         t1 = orig + t_p
         t2 = t1 + dist*settings.WPHASE_CUTOFF
         tr = st_sel.select(id = trid)[0]
+        dt = tr.stats.delta
 
         tr.data = np.array(tr.data, dtype=float)
         try:

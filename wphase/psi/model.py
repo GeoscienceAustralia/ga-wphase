@@ -103,6 +103,8 @@ class OL2Result(Data):
     """List of waveform stream IDs of channels used in inversion"""
     trace_lengths: OrderedDict[str, int]
     """Length of each waveform trace, keyed on waveform stream ID"""
+    periods: Tuple[float, float]
+    """Periods of the bandpass filter used (low, high; in seconds)"""
 
     moment_tensor: np.ndarray = Field(exclude=True)
     """Moment tensor in Newton-metres as a 6-element array"""
@@ -119,11 +121,11 @@ class OL3Result(OL2Result):
     centroid: Tuple[float, float, float]
     """Optimal centroid location as tuple (latitude (deg), longitude (deg), depth (km))"""
 
-    grid_search_candidates: List[Tuple[float, float, float]] = Field(exclude=True)
+    grid_search_candidates: Optional[List[Tuple[float, float, float]]] = Field(exclude=True)
     """List of inputs to core_inversion that were used in the grid search.
     Elements are (lat, lon, depths) tuples."""
 
-    grid_search_results: List[Tuple[np.ndarray, float]] = Field(exclude=True)
+    grid_search_results: Optional[List[Tuple[np.ndarray, float]]] = Field(exclude=True)
     """List of outputs from the inversion for each point in the grid search.
     elements are (MT, misfit) tuples."""
 
@@ -198,6 +200,13 @@ class TimeDelayMisfits(Data):
     min: int
 
 
+class Timing(Data):
+    ol1: Optional[float] = None
+    ol2: Optional[float] = None
+    ol3: Optional[float] = None
+    new: Optional[float] = None
+
+
 class WPhaseResult(Data):
     """This defines the schema of ga-wphase's final JSON output."""
 
@@ -206,6 +215,7 @@ class WPhaseResult(Data):
     OL1: Optional[OL1Result] = None
     OL2: Optional[OL2Result] = None
     OL3: Optional[OL3Result] = None
+    new: Optional[OL3Result] = None
     QualityParams: Optional[Quality] = None
     MomentTensor: Optional[AntelopeMomentTensor] = None  # "Preferred solution"
     Centroid: Optional[CentroidLocation] = None
@@ -220,6 +230,7 @@ class WPhaseResult(Data):
     Error: Optional[str] = None
     StackTrace: Optional[str] = None
     WPInvProfile: Optional[str] = None
+    timing: Timing = Timing()
 
     DataSource: Optional[str] = None
     HostName: Optional[str] = None

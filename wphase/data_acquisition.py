@@ -104,7 +104,6 @@ def get_waveforms(
         t_afterWP=60.,   # seconds
         client=None,
         dist_range=(5., 90.), # degrees
-        add_ptime=True,
         bulk_chunk_len=200,
         prune_cutoffs=(1., 2., 3., 4., 5., 5.),
         decimate=True,

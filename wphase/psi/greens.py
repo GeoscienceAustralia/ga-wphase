@@ -1,15 +1,25 @@
 """Greens function data source."""
 import logging
-import os.path
 
 from functools import lru_cache
+from os import getpid
+from pathlib import Path
+from typing import List, Literal, Mapping, Optional, Union
 
 import h5py
 import numpy as np
 import obspy
 
+from wphase.psi.parallel_util import per_proc_cache
+
 logger = logging.getLogger(__name__)
 
+# Waveform component types
+AbsoluteComponent = Union[Literal["N"], Literal["E"], Literal["Z"]]
+SymmetrizedComponent = Union[Literal["L"], Literal["T"], Literal["Z"]]
+
+# East/North is achieved by rotating Transverse/Longitudinal
+SYMMETRIZED_COMPONENT: Mapping[AbsoluteComponent, SymmetrizedComponent] = {"Z": "Z", "N": "L", "E": "T"}
 
 # We follow Kanamori & Rivera in using spherical coordinates r, theta, phi
 # where r is vertical, theta is latitude and phi is longitude.
@@ -28,9 +38,6 @@ NONZERO_COMPONENTS = dict(
     T=["TP", "RP"],
 )
 
-# East/North is achieved by rotating Transverse/Longitudinal
-SYMMETRIZED_COMPONENT = {"Z": "Z", "N": "L", "E": "T"}
-
 class GreensFunctions(object):
     """Class that provides convenient access to the Greens Function database
     used by Kanamori & Rivera 2008.
@@ -44,37 +51,43 @@ class GreensFunctions(object):
     # factor to convert to Newton-metres:
     gf_unit_Nm = 10.**-21
 
-    def __init__(self, path):
-        """:param str path: Path to the GF directory *or* HDF5 file."""
-        self.path = path
-        self.is_hdf5 = not os.path.isdir(path)
-        if self.is_hdf5:
-            with self._hdf_open() as f:
-                self._hdirs = list(f)
-        else:
-            self._hdirs = [f for f in os.listdir(path)
-                           if f.endswith('.5')]
-        self.depths = np.array([float(d[1:]) for d in self._hdirs], dtype=float)
+    root: Path
+    _hdirs: List[str]
+    is_hdf5: bool
+    depths: np.ndarray
 
+    def __init__(self, path: Union[Path, str]):
+        """:param str path: Path to the GF directory *or* HDF5 file."""
+        self.root = Path(path)
+        self.is_hdf5 = not self.root.is_dir()
+        if self.is_hdf5:
+            self._hdirs = list(self._hdf_open())
+        else:
+            self._hdirs = [f.name for f in self.root.iterdir() if f.name.endswith('.5')]
+        self.depths = np.array([float(d[1:]) for d in self._hdirs], dtype=float)
+        self.depths.sort()
+
+    # Opening a h5py file is not cheap, but we can't share them between
+    # processes; so we use this decorator to open one per worker process
+    @per_proc_cache(maxsize=None)
     def _hdf_open(self):
-        return h5py.File(self.path, 'r')
+        return h5py.File(self.root, 'r')
 
     @lru_cache(maxsize=None)
     def _closest_depth(self, depth):
         idx = np.argmin(np.abs(self.depths - depth))
         return self._hdirs[idx] + '/'
 
-    def _get_array(self, path):
+    def _get_array(self, path) -> np.ndarray:
         if self.is_hdf5:
-            with self._hdf_open() as f:
-                return f[path][...]
+            return self._hdf_open()[path][...] # type: ignore
         else:
             return self._read_obspy_trace(path)[0].data
 
     def _read_obspy_trace(self, path):
-        return obspy.read(os.path.join(self.path, path))
+        return obspy.read(self.root / path)
 
-    def __getitem__(self, tup):
+    def __getitem__(self, tup) -> np.ndarray:
         hdir, dist, mt_component, wf_component = tup
         if wf_component not in SYMMETRIZED_COMPONENT.values():
             raise ValueError("Bad component %s" % wf_component)
@@ -86,7 +99,7 @@ class GreensFunctions(object):
         except Exception as e:
             raise KeyError(tup) from e
 
-    def select(self, wf_component, dist, depth):
+    def select(self, wf_component: SymmetrizedComponent, dist: float, depth: float):
         """Retrieves the raw Greens functions for the given distance, depth and
         component.
 
@@ -110,16 +123,16 @@ class GreensFunctions(object):
 
         mt_components = NONZERO_COMPONENTS[wf_component]
 
-        rows = [np.asarray(self[hdir, dist_form, mt_component, wf_component], dtype=np.float64)
+        rows = [self[hdir, dist_form, mt_component, wf_component]
                 if mt_component in mt_components
                 else None
                 for mt_component in ALL_MT_COMPONENTS]
         shape = next(r.shape for r in rows if r is not None)
-        return np.array([r if r is not None
+        return np.stack([r if r is not None
                          else np.zeros(shape, dtype=np.float64)
                          for r in rows])
 
-    def select_rotated(self, wf_component, dist, depth, azimuth):
+    def select_rotated(self, wf_component: AbsoluteComponent, dist: float, depth: float, azimuth: float):
         """Retrieves the transformed Greens functions for the given azimuth,
         distance, depth and component.
 
@@ -141,14 +154,14 @@ class GreensFunctions(object):
         if wf_component == 'Z':
             # vertical waveform component, so no waveform rotation necessary
             unrotated = self.select('Z', dist, depth)
-            return GFMTtransform(azimuth, wf_component).dot(unrotated)
+            return GFMTtransform(azimuth, wf_component) @ unrotated
         else:
             L = self.select('L', dist, depth)
             T = self.select('T', dist, depth)
 
             # First transform moment tensor components:
-            Ld = GFMTtransform(azimuth, 'N').dot(L)
-            Td = GFMTtransform(azimuth, 'E').dot(T)
+            Ld = GFMTtransform(azimuth, 'N') @ L
+            Td = GFMTtransform(azimuth, 'E') @ T
 
             # Then waveform components:
             if wf_component in ('N', '1'):
@@ -161,16 +174,15 @@ class GreensFunctions(object):
 
     @property
     @lru_cache()
-    def delta(self):
+    def delta(self) -> float:
         """Time resolution of greens functions database"""
         if self.is_hdf5:
-            with self._hdf_open() as f:
-                return f.attrs["dt"]
+            return float(self._hdf_open().attrs["dt"]) # type: ignore
         else:
             return self._read_obspy_trace("H003.5/PP/GF.0001.SY.LHZ.SAC")[0].stats.delta
 
 @lru_cache(maxsize=None)
-def GFMTtransform(azimuth, wf_component):
+def GFMTtransform(azimuth: float, wf_component: AbsoluteComponent) -> np.ndarray:
     """Build the transformation matrix corresponding to a rotation by the given
     azimuth that can be applied to moment tensor greens functions for the given
     waveform component."""
@@ -197,8 +209,5 @@ def GFMTtransform(azimuth, wf_component):
             [0, 0, 0, 0,       0, -s],
             [0, 0, 0, 0,       0, c],
         ])
-
-
-# SelectN => PP, RR, RT, TT
-# SelectE => RP, TP
-# SelectZ => PP, RR, RT, TT
+    else:
+        raise ValueError(f"Unexpected waveform component '{wf_component}'")

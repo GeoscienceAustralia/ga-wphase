@@ -43,6 +43,7 @@ wlogger.setLevel(logging.WARNING)
 wlogger.addHandler(LogRelay(level=logging.WARNING))
 logging.captureWarnings(True)
 
+Application.HandleSignals(False, False)
 class WPhase(Application):
     def __init__(self, argc, argv):
         # Log all messages to a file for S3

@@ -96,6 +96,13 @@ def azimuthal_gap(azis: Iterable[float]):
     return gaps.max()
 
 
+def pad1d(data: np.ndarray, pad_width: Tuple[int, int], axis: int, **kwargs):
+    """Pad an array along a single axis."""
+    padding: List[Tuple[int, int]] = [(0, 0)] * data.ndim
+    padding[axis] = pad_width
+    return np.pad(data, padding, **kwargs)
+
+
 def ltrim(data: np.ndarray, starttime: float, delta: float):
     '''
     Left trimming similar to obspy but when *data* is a np array.
@@ -109,7 +116,7 @@ def ltrim(data: np.ndarray, starttime: float, delta: float):
     '''
     i_of = int(round(starttime/delta))
     if i_of < 0:
-        gap = data[..., 0, None] * np.ones(abs(i_of))
+        gap = data[..., 0, np.newaxis] * np.ones(abs(i_of))
         return np.concatenate((gap, data), axis=-1)
     else:
         return data[..., i_of:]

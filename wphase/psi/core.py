@@ -2,26 +2,30 @@
 """Core implementation of the W-Phase inversion."""
 from __future__ import absolute_import, print_function
 
-import glob
 import logging
-import os
-import sys
-import traceback
-from builtins import range, str
 from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor
-from timeit import default_timer as timer
-from typing import Literal, Mapping, NamedTuple, Optional, Sequence, Union
+from dataclasses import dataclass
+from functools import partial
+from time import perf_counter
+from typing import Any, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
-import h5py
 import numpy as np
 import pandas as pd
 from numpy.linalg import lstsq
+from numpy.typing import ArrayLike
 from obspy import Trace
-from obspy.core import Stream, UTCDateTime, read
-from scipy import ndimage
+from obspy.core import Stream, UTCDateTime
 from scipy.interpolate import interp1d
-from scipy.signal import detrend, triang
+from scipy.ndimage import convolve1d
+from scipy.optimize import OptimizeResult, minimize
+
+from wphase.wputils import SimpleTimer
+
+try:
+    from scipy.signal.windows import triang
+except ImportError:
+    from scipy.signal import triang
 
 try:
     from obspy.geodetics import locations2degrees
@@ -41,16 +45,99 @@ except ImportError:
 from wphase import settings
 
 from .bandpass import bandpassfilter
-from .exceptions import InversionError, DeconvolutionError, UnknownTransferFunction
-from .greens import GreensFunctions
-from .model import (ChannelMetadata, Event, OL1Result, OL2Result, OL3Result, PreliminaryMagnitudeFit,
-                    TimeDelayMisfits, WPhaseResult)
-from .seismoutils import azimuthal_gap, ltrim, rot_12_NE
+from .exceptions import (DeconvolutionError, InversionError,
+                         UnknownTransferFunction)
+from .greens import AbsoluteComponent, GreensFunctions
+from .model import (ChannelMetadata, Event, OL1Result, OL2Result, OL3Result,
+                    PreliminaryMagnitudeFit, TimeDelayMisfits, WPhaseResult)
+from .seismoutils import azimuthal_gap, ltrim, pad1d, rot_12_NE
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class ChannelData:
+    """We just use this to provide type hints for rows of our `data` frame."""
+    name: str
+    metadata: ChannelMetadata
+    location: str
+    component: AbsoluteComponent
+    raw_trace: Trace
+    trace: Trace
+    distance: float
+    azimuth: float
+    ptime: float
+    start_time: UTCDateTime
+    end_time: UTCDateTime
+
+
+def build_dataframe(
+    stream: Stream,
+    event: Event,
+    metadata: Mapping[str, ChannelMetadata],
+    ptimes: Mapping[str, float]
+) -> pd.DataFrame:
+    """Combine waveform data and our extra associated data into a single dataframe."""
+    #In case of multiple locations we favor
+    # '00'. This may be improved if we select the one with the longer period
+    # sensor.
+    st_sel = stream.select(location = '00')
+    st_sel += stream.select(location = '--')
+    st_sel += stream.select(location = '') #Check this.
+
+    # We don't really care exactly what ordering obspy chooses
+    # here; we just want a deterministic ordering so we can compare runs.
+    st_sel.sort()
+
+    logger.info(
+        'Initial number of traces: using %d with default locations (of %d total)',
+        len(st_sel), len(stream)
+    )
+
+    # rotate the horizontal components to geographical north or east
+    st_sel = rot_12_NE(st_sel, metadata)
+
+    # Convert obspy Stream to a dataframe so we can attach our extra data to each channel
+    def trace_to_record(trace: Trace):
+        return {
+            "id": trace.id,
+            "location": trace.stats.location,
+            "component": trace.stats.component,
+            "raw_trace": trace,
+            "metadata": metadata.get(trace.id),
+        }
+    data = pd.DataFrame.from_records(map(trace_to_record, st_sel), index="id")
+
+    comps = settings.WAVEFORM_COMPONENTS
+    if comps:
+        data = data[data.component.isin(comps)].copy()
+        logger.info('%d traces remaining after restricting to %s', len(data), comps)
+
+    def epicentral_distance(row):
+        return locations2degrees(event.latitude, event.longitude, row.metadata.latitude, row.metadata.longitude)
+    data["distance"] = data.apply(epicentral_distance, axis=1)
+
+    def azimuth_from_north(row):
+        return gps2dist_azimuth(event.latitude, event.longitude, row.metadata.latitude, row.metadata.longitude)[1]
+    data["azimuth"] = data.apply(azimuth_from_north, axis=1)
+
+    gap = azimuthal_gap(data.azimuth)
+    if gap > settings.MAXIMUM_AZIMUTHAL_GAP:
+        raise InversionError("Lack of azimuthal coverage (%.0f° > %.0f°). Aborting."
+                             % (gap, settings.MAXIMUM_AZIMUTHAL_GAP))
+
+    def travel_time(row):
+        return ptimes.get(row.name)
+    data["ptime"] = data.apply(travel_time, axis=1)
+    data = data[data["ptime"].notnull()].copy()
+
+    origin_time = UTCDateTime(event.time)
+    data["start_time"] = data["ptime"].map(lambda t: origin_time + t)
+    data["end_time"] = data["start_time"] + data["distance"] * settings.WPHASE_CUTOFF
+
+    return data
+
 _Vpaz2freq = np.vectorize(paz_2_amplitude_value_of_freq_resp)
-def amplitude_at_frequency(metadata: ChannelMetadata, frequency: float):
+def amplitude_at_frequency(metadata: ChannelMetadata, frequency: np.ndarray):
     """Given metadata for a seismometer channel, return the amplitude response
     at a given frequency."""
     if metadata.transfer_function == "B":
@@ -63,16 +150,390 @@ def amplitude_at_frequency(metadata: ChannelMetadata, frequency: float):
         "gain": metadata.gain,
     }, frequency)
 
-def stream_to_df(stream: Stream, metadata: Mapping[str, ChannelMetadata]):
-    def trace_to_record(trace: Trace):
-        return {
-            "id": trace.id,
-            "location": trace.stats.location,
-            "component": trace.stats.component,
-            "trace": trace,
-            "metadata": metadata.get(trace.id),
-        }
-    return pd.DataFrame.from_records(map(trace_to_record, stream), index="id")
+def preprocess_channel_waveforms(row: ChannelData, frequencies: np.ndarray, Ta: float, Tb: float) -> Optional[Trace]:
+    """Deconvolve + filter the waveform data for a single channel."""
+    trid = row.name
+
+    try:
+        response_amplitude = amplitude_at_frequency(row.metadata, frequencies)
+    except UnknownTransferFunction:
+        logger.warning("Unknown transfer function. Skipping %s", trid)
+        return None
+
+    # Fitting the instrument response and getting coefficients
+    response_coefficients = fit_instrument_response(
+        row.metadata.sensitivity, frequencies, response_amplitude
+    )
+    if response_coefficients is None:
+        logger.warning("Couldn't fit instrument response coefficients. Skipping %s", trid)
+        return None
+    else:
+        om0, h, G = response_coefficients
+
+    omega = frequencies*2.*np.pi
+    amplitude_from_coeff = np.abs(omega*omega / (omega*omega + 2j*h*om0*omega - om0*om0))
+
+    # Misfit is the relative L2 norm of the difference, expressed as a percentage
+    misfit = (
+        100*np.linalg.norm(response_amplitude-amplitude_from_coeff)
+        / np.linalg.norm(response_amplitude)
+    )
+
+    if misfit > settings.RESPONSE_MISFIT_TOL:
+        logger.warning('Bad fit for instrument response (misfit=%e). Skipping %s', misfit, trid)
+        return None
+
+    dt = row.raw_trace.stats.delta
+    try:
+        ret = Trace(
+            deconvolve_and_filter(
+                row.raw_trace,
+                om0,
+                h,
+                G,
+                dt,
+                corners=4,
+                baselinelen=60./dt,
+                taperlen=10.,
+                fmin=1./Tb,
+                fmax=1./Ta
+            ),
+            row.raw_trace.stats,
+        )
+
+    except DeconvolutionError as e:
+        logger.warning("Error deconvolving trace %s: %s", trid, str(e))
+        return None
+
+    # trim to the Wphase time window
+    ret.trim(row.start_time, row.end_time)
+    if len(ret) == 0:
+        logger.warning("Empty trace. Skipping %s", trid)
+        return None
+
+    return ret
+
+def waveform_preprocessor(Ta: float, Tb: float):
+    T = np.linspace(Ta,Tb,500)
+    freq = 1./T
+    return partial(preprocess_channel_waveforms, frequencies=freq, Ta=Ta, Tb=Tb)
+
+
+def reject_p2p_outliers(data: pd.DataFrame) -> pd.DataFrame:
+    median_p2p = data.p2p.median(skipna=True)
+    mrcoeff = settings.MEDIAN_REJECTION_COEFF
+    p2pmax, p2pmin = mrcoeff[1]*median_p2p, mrcoeff[0]*median_p2p
+
+    for trid, row in data.iterrows():
+        if np.isnan(row.p2p):
+            logger.warning("P2P Amp for %s is NaN! Excluding.", trid)
+        elif row.p2p > p2pmax:
+            logger.info("P2P Amp for %s is too big (%.2e > %.2e). Excluding.", trid, row.p2p, p2pmax)
+        elif row.p2p < p2pmin:
+            logger.info("P2P Amp for %s is too small (%.2e < %.2e). Excluding.", trid, row.p2p, p2pmin)
+
+    return data[data.p2p.between(p2pmin, p2pmax)] # type: ignore
+
+
+def computeOL1(data: pd.DataFrame, result: WPhaseResult):
+    """Preliminary magnitude estimate based only on P2P amplitudes in W-Phase
+    spectral band."""
+    data = data.copy()
+    data["trace"] = data.apply(waveform_preprocessor(200, 1000), axis=1)
+
+    # Remove channels that failed waveform preprocessing:
+    data = data[data.trace.notnull()].copy() # type: ignore
+    data["p2p"] = data.trace.map(lambda d: d[:].max() - d[:].min())
+
+    data = reject_p2p_outliers(data[data.component == "Z"]).sort_values("distance") # type: ignore
+
+    if len(data) < settings.MINIMUM_STATIONS:
+        raise InversionError("Lack of stations (%d < %d). Aborting."
+                             % (len(data), settings.MINIMUM_STATIONS))
+
+    logger.info("Traces accepted for preliminary magnitude calculation: {}"
+                .format(len(data)))
+
+    pre_results = preliminary_magnitude(data.p2p, data.distance, data.azimuth, data.index)
+
+    logger.info("Preliminary t_h = %.2f" % pre_results.timescale)
+
+    logger.info("OL1:")
+    logger.info("Average amplitude:  %.1em", pre_results.average_amplitude)
+    logger.info("Magnitude:          %.2f", pre_results.magnitude)
+    logger.info("Strike:             %.1f°", pre_results.strike)
+    logger.info("Eccentricity (b/a): %.2f", pre_results.eccentricity)
+
+    result.OL1 = OL1Result(
+        preliminary_calc_details=pre_results,
+        used_traces=list(data.index),
+        nstations=len(data),
+        magnitude=round(pre_results.magnitude, 1),
+    )
+
+
+def computeNew(
+    data: pd.DataFrame,
+    event: Event,
+    greens: GreensFunctions,
+    result: WPhaseResult,
+    t_h: float,
+):
+    ol1 = result.OL1
+    if ol1 is None:
+        raise ValueError("OL1 result not found, can't proceed with optimization")
+
+    # Now that we have a preliminary magnitude, we use it to choose a more precise frequency band:
+    Ta, Tb = get_corner_freqs_from_mag(ol1.preliminary_calc_details.magnitude)
+    logger.info("OLNew Filter corner periods: %.1f, %1f" % (Ta, Tb))
+
+    data = data.copy()
+    data["trace"] = data.apply(waveform_preprocessor(Ta, Tb), axis=1)
+    data = data[data.trace.notnull()].copy() # type: ignore
+    data["p2p"] = data.trace.map(lambda d: d[:].max() - d[:].min())
+    data = reject_p2p_outliers(data).sort_values("distance")
+
+    logger.info('number of traces for OLNew calculation: %d', len(data))
+    params = Point(event.latitude, event.longitude, event.depth)
+    for tol in settings.MISFIT_TOL_SEQUENCE:
+        _, (M, misfit, GFmatrix) = omni_minimize(
+            data, greens, (Ta, Tb), t_h, t_h, params, tol=settings.OPTIMIZATION_TOLERANCE
+        )
+        logger.info("With %d channels, overall misfit is %.0f", len(data), misfit)
+        syn = GFmatrix @ full_to_deviatoric(M)
+        def misfit_of_channel(row):
+            channel_syn = syn[row.start:row.end]
+            return 100 * np.linalg.norm(channel_syn - row.trace) / np.linalg.norm(channel_syn)
+        misfits = data.join(trace_indices(data.trace)).apply(misfit_of_channel, axis=1)
+        data = data[misfits <= tol]
+
+        logger.info("After culling to misfit <= %.0f%%: %d channels remaining", tol, len(data))
+        if len(data) < settings.MINIMUM_FITTING_CHANNELS:
+            msg = "Only {} channels with possibly acceptable fits. Aborting.".format(len(data))
+            logger.error(msg)
+            raise InversionError(msg, result=result)
+
+    params, (M, misfit, GFmatrix) = omni_minimize(data, greens, (Ta, Tb), t_h, t_h, params)
+    syn = GFmatrix @ full_to_deviatoric(M)
+    trace_lengths = list(zip(data.index, data.trace.map(len)))
+    result.new = make_result(
+        OL3Result,
+        M,
+        misfit=misfit,
+        depth=params.depth,
+        time_delay=t_h,
+        centroid=(params.latitude, params.longitude, params.depth),
+        periods=(Ta, Tb),
+        used_traces=list(data.index),
+        moment_tensor=M,
+        observed_displacements=np.concatenate(data.trace),
+        synthetic_displacements=syn,
+        trace_lengths=OrderedDict(trace_lengths),
+        grid_search_candidates=[],
+        grid_search_results=[],
+    )
+
+def computeOL2(
+    data: pd.DataFrame,
+    event: Event,
+    greens: GreensFunctions,
+    result: WPhaseResult,
+):
+    """Moment tensor from PDE inversion, using fixed centroid (from preliminary
+    hypocenter) and searching for optimal time delay."""
+    ol1 = result.OL1
+    if ol1 is None:
+        raise ValueError("OL1 result not found, can't proceed with OL2")
+
+    # Now that we have a preliminary magnitude, we use it to choose a more precise frequency band:
+    Ta, Tb = get_corner_freqs_from_mag(ol1.preliminary_calc_details.magnitude)
+    logger.info("OL2 Filter corner periods: %.1f, %1f" % (Ta, Tb))
+
+    data = data.copy()
+    data["trace"] = data.apply(waveform_preprocessor(Ta, Tb), axis=1)
+
+    # Remove channels that failed waveform preprocessing:
+    data = data[data.trace.notnull()].copy() # type: ignore
+    data["p2p"] = data.trace.map(lambda d: d[:].max() - d[:].min())
+    data = reject_p2p_outliers(data).sort_values("distance")
+
+    logger.info('number of traces for OL2: %d', len(data))
+    trlen = np.asarray(data.trace.map(len))
+    mrf = moment_rate_function(ol1.preliminary_calc_details.timescale, greens.delta)
+    max_t_d = int(settings.MAXIMUM_TIME_DELAY * greens.delta)
+    time_delays = np.arange(1., max_t_d)
+
+    centroid = Point(
+        latitude=event.latitude,
+        longitude=event.longitude,
+        depth=event.depth,
+    )
+
+    # We start by minimizing misfit over time delay. Since changing time delay
+    # just translates the waveforms, we only need to fetch the greens
+    # functions once:
+    GFmatrix = get_greens_for_dataset(
+        greens=greens,
+        data=data,
+        centroid=centroid,
+        periods=(Ta, Tb),
+        mrf=mrf,
+        padding=max_t_d,
+        t_d=max_t_d,
+    )
+
+    # This was taking *longer* to run when we used a parallel pool - the
+    # overhead doesn't seem to be worth it.
+    observed_displacements = np.concatenate(data.trace)
+    misfits = [
+        get_timedelay_misfit(t, GFmatrix, trlen, observed_displacements, max_t_d)
+        for t in time_delays
+    ]
+
+    # Set t_d (time delay) and and t_h (half duration) to optimal values:
+    mis_min = int(np.array(misfits).argmin())
+    result.misfits = TimeDelayMisfits(array=misfits, min=mis_min)
+
+    t_d = t_h = time_delays[mis_min]
+    mrf = moment_rate_function(t_h, greens.delta)
+    logger.info("Source time function, time delay: %d, %f", len(mrf), t_d)
+    logger.info("revised t_h = %.2f" % t_h)
+
+    inversion_params = dict(
+        t_d=t_d,
+        greens=greens,
+        centroid=centroid,
+        periods=(Ta, Tb),
+        mrf=mrf,
+    )
+
+    #### Removing individually bad-fitting channels.
+    # This iteratively removes channels with misfits outside of the acceptable
+    # range defined by the setting MISFIT_TOL_SEQUENCE.
+    for tol in settings.MISFIT_TOL_SEQUENCE:
+        M, misfit, GFmatrix = core_inversion(data=data, **inversion_params)
+        logger.info("With %d channels, overall misfit is %.0f", len(data), misfit)
+        syn = GFmatrix @ full_to_deviatoric(M)
+        def misfit_of_channel(row):
+            channel_syn = syn[row.start:row.end]
+            return 100 * np.linalg.norm(channel_syn - row.trace) / np.linalg.norm(channel_syn)
+        misfits = data.join(trace_indices(data.trace)).apply(misfit_of_channel, axis=1)
+        data = data[misfits <= tol]
+
+        logger.info("After culling to misfit <= %.0f%%: %d channels remaining", tol, len(data))
+        if len(data) < settings.MINIMUM_FITTING_CHANNELS:
+            msg = "Only {} channels with possibly acceptable fits. Aborting.".format(len(data))
+            logger.error(msg)
+            raise InversionError(msg, result=result)
+
+    M, misfit, GFmatrix = core_inversion(data=data, **inversion_params)
+    syn = GFmatrix @ full_to_deviatoric(M)
+
+    trace_lengths = list(zip(data.index, trlen))
+    result.OL2 = make_result(
+        OL2Result,
+        M,
+        periods=(Ta, Tb),
+        misfit=misfit,
+        depth=event.depth,
+        time_delay=t_d,
+        used_traces=list(data.index),
+        moment_tensor=M,
+        observed_displacements=np.concatenate(data.trace),
+        synthetic_displacements=syn,
+        trace_lengths=OrderedDict(trace_lengths),
+    )
+
+    return data
+
+
+
+def computeOL3(
+    data: pd.DataFrame,
+    event: Event,
+    greens: GreensFunctions,
+    result: WPhaseResult,
+    processes: Optional[int] = None
+):
+    """Moment tensor from PDE inversion, using fixed time delay (from OL2) and
+    searching for optimal centroid location + depth."""
+    ol2 = result.OL2
+    assert ol2 is not None
+    periods = ol2.periods
+    observed_displacements = ol2.observed_displacements
+    t_d = ol2.time_delay
+    mrf = moment_rate_function(t_d, greens.delta)
+    data = data.copy()
+    data["trace"] = data.apply(waveform_preprocessor(*ol2.periods), axis=1)
+
+    logger.info("Performing grid search for best centroid location.")
+    lat_grid, lon_grid = get_latlon_for_grid(
+        event.latitude,
+        event.longitude,
+        dist_lat=3.0,
+        dist_lon=3.0,
+        delta=0.8
+    )
+    logger.debug("Grid size: %d * %d", len(lon_grid), len(lat_grid))
+    latlons = [(lat, lon) for lat in lat_grid for lon in lon_grid]
+
+    fixed_params = {
+        "data": data,
+        "observed_displacements": observed_displacements,
+        "periods": periods,
+        "t_d": t_d,
+        "mrf": mrf,
+        "greens": greens,
+    }
+
+    grid_search_inputs: List[dict] = [{"centroid": Point(lat, lon, event.depth)} for lat, lon in latlons]
+    i_grid, _, _, grid_search_results = minimize_misfit(
+        inputs=grid_search_inputs,
+        parameters=fixed_params,
+        processes=processes,
+    )
+    cenlat, cenlon = latlons[i_grid]
+
+    logger.info("Performing grid search for best depth.")
+    deps_grid = get_depths_for_grid(event.depth, greens)
+    logger.debug("Depth grid size: %d", len(deps_grid))
+
+    depth_search_inputs: List[dict] = [{"centroid": Point(cenlat, cenlon, depth)} for depth in deps_grid]
+    i_dep, _, _, _ = minimize_misfit(
+        inputs=depth_search_inputs,
+        parameters=fixed_params,
+        processes=processes
+    )
+    cendep = deps_grid[i_dep]
+
+    ### Final inversion!!
+    # While we already inverted at this centroid location during the depth
+    # search, we threw away the corresponding synthetic waveforms; so we need
+    # to re-run the inversion to get them.
+
+    centroid = Point(latitude=cenlat, longitude=cenlon, depth=cendep)
+    M, misfit, GFmatrix = core_inversion(centroid=centroid, **fixed_params)
+
+    syn = GFmatrix @ full_to_deviatoric(M)
+    trace_lengths = list(zip(data.index, data.trace.map(len)))
+
+    result.OL3 = make_result(
+        OL3Result,
+        M,
+        misfit=misfit,
+        depth=cendep,
+        time_delay=t_d,
+        centroid=(cenlat, cenlon, cendep),
+        periods=periods,
+        used_traces=list(data.index),
+        moment_tensor=M,
+        observed_displacements=observed_displacements,
+        synthetic_displacements=syn,
+        trace_lengths=OrderedDict(trace_lengths),
+        grid_search_candidates=[row["centroid"] for row in grid_search_inputs],
+        grid_search_results=grid_search_results,
+    )
+
 
 def wpinv(
     stream: Stream,
@@ -82,6 +543,7 @@ def wpinv(
     ptimes: Mapping[str, float],
     OL: int = 1,
     processes: Optional[int] = None,
+    do_new_calculation: bool = False,
 ):
     """
     This function is the main function that will compute the inversion. For
@@ -103,479 +565,57 @@ def wpinv(
 
     :return WPhaseResult:
     """
-    #############Output Level 1#############################
-    #############Preliminary magnitude:#####################
-
-    # Ta and Tb give the corner periords in seconds of the band pass filter
-    # used at this stage of processing.
-    Ta = 200.
-    Tb = 1000.
-
-    # vector of periods to consider in the instrument response fitting.
-    T = np.linspace(Ta,Tb,500)
-    freq = 1./T
-
-    # convert to angular frequency
-    omega = freq*2.*np.pi
-
-    hyplat = event.latitude
-    hyplon = event.longitude
-    hypdep = event.depth
-    origin_time = UTCDateTime(event.time)
-
     # Deal with extremly shallow preliminary hypocenters by clamping to 10km
-    if hypdep < 10.:
-        hypdep = 10.
+    if event.depth < 10:
+        event.depth = 10
 
-    #In case of multiple locations we favor
-    # '00'. This may be improved if we select the one with the longer period
-    # sensor.
-    st_sel = stream.select(location = '00')
-    st_sel += stream.select(location = '--')
-    st_sel += stream.select(location = '') #Check this.
+    data = build_dataframe(stream=stream, event=event, metadata=metadata, ptimes=ptimes)
+    greens = GreensFunctions(gfdir)
+    result = WPhaseResult(Event=event)
+    timer = SimpleTimer()
 
-    # We don't really care exactly what ordering obspy chooses
-    # here; we just want a deterministic ordering so we can compare runs.
-    st_sel.sort()
-    st_orig = st_sel.copy()
+    with timer:
+        computeOL1(data, result=result)
+    result.timing.ol1 = timer.duration
 
-    logger.info('Initial number of traces: using %d with default locations (of %d total)', len(st_sel), len(stream))
-
-    # rotate the horizontal components to geographical north or east
-    st_sel = rot_12_NE(st_sel, metadata)
-
-    data = stream_to_df(st_sel, metadata)
-
-    def epicentral_distance(row):
-        return locations2degrees(hyplat, hyplon, row.metadata.latitude, row.metadata.longitude)
-    data["distance"] = data.apply(epicentral_distance, axis=1)
-
-    def azimuth_from_north(row):
-        return gps2dist_azimuth(hyplat, hyplon, row.metadata.latitude, row.metadata.longitude)[1]
-    data["azimuth"] = data.apply(azimuth_from_north, axis=1)
-
-    def travel_time(row):
-        return ptimes.get(row.name)
-    data["ptime"] = data.apply(travel_time, axis=1)
-
-    data["start_time"] = data["ptime"].map(lambda t: origin_time + t)
-    data["end_time"] = data["start_time"] + data["distance"] * settings.WPHASE_CUTOFF
-
-    def process_waveforms(row: pd.Series):
-        trid = row.name
-
-        try:
-            response_amplitude = amplitude_at_frequency(row.metadata, freq)
-        except UnknownTransferFunction:
-            logger.warning("Unknown transfer function. Skipping %s", trid)
-            return None
-
-        # Fitting the instrument response and getting coefficients
-        response_coefficients = fit_instrument_response(
-            row.metadata.sensitivity, freq, response_amplitude
-        )
-        if response_coefficients is None:
-            logger.warning("Couldn't fit instrument response coefficients. Skipping %s", trid)
-            return None
-        else:
-            om0, h, G = response_coefficients
-
-        amplitude_from_coeff = np.abs(omega*omega / (omega*omega + 2j*h*om0*omega - om0*om0))
-
-        # Misfit is the relative L2 norm of the difference, expressed as a percentage
-        misfit = (
-            100*np.linalg.norm(response_amplitude-amplitude_from_coeff)
-            / np.linalg.norm(response_amplitude)
-        )
-
-        if misfit > settings.RESPONSE_MISFIT_TOL:
-            logger.warning('Bad fit for instrument response (misfit=%e). Skipping %s', misfit, trid)
-            return None
-
-        dt = row.trace.stats.delta
-        try:
-            row.trace.data = deconvolve_and_filter(
-                row.trace,
-                om0,
-                h,
-                G,
-                dt,
-                corners=4,
-                baselinelen=60./dt,
-                taperlen=10.,
-                fmin=1./Tb,
-                fmax=1./Ta
-            )
-
-        except DeconvolutionError as e:
-            logger.warning("Error deconvolving trace %s: %s", trid, str(e))
-            return None
-
-        # trim to the Wphase time window
-        row.trace.trim(row.start_time, row.end_time)
-        if len(row.trace) == 0:
-            logger.warning("Empty trace. Skipping %s", trid)
-            return None
-
-        return row.trace
-
-    data["trace"] = data.apply(process_waveforms, axis=1)
-    # Remove channels that failed waveform preprocessing:
-    data: pd.DataFrame = data[data.trace.notnull()] # type: ignore
-    data["p2p"] = data.apply(lambda row: row.trace[:].max() - row.trace[:].min(), axis=1)
-
-    data = data.sort_values("distance")
-
-    # Median rejection
-    median_p2p = data.p2p.median(skipna=True)
-    mrcoeff = settings.MEDIAN_REJECTION_COEFF
-    p2pmax, p2pmin = mrcoeff[1]*median_p2p, mrcoeff[0]*median_p2p
-
-    for trid, row in data.iterrows():
-        if np.isnan(row.p2p):
-            logger.warning("P2P Amp for %s is NaN! Excluding.", trid)
-        elif row.p2p > p2pmax:
-            logger.info("P2P Amp for %s is too big (%.2e > %.2e). Excluding.", trid, row.p2p, p2pmax)
-        elif row.p2p < p2pmin:
-            logger.info("P2P Amp for %s is too small (%.2e < %.2e). Excluding.", trid, row.p2p, p2pmin)
-
-    accepted_data: pd.DataFrame = data[data.p2p.between(p2pmin, p2pmax) & (data.component == "Z")] # type: ignore
-
-    gap = azimuthal_gap(data.azimuth)
-    if gap > settings.MAXIMUM_AZIMUTHAL_GAP:
-        raise InversionError("Lack of azimuthal coverage (%.0f° > %.0f°). Aborting."
-                             % (gap, settings.MAXIMUM_AZIMUTHAL_GAP))
-    if len(accepted_data) < settings.MINIMUM_STATIONS:
-        raise InversionError("Lack of stations (%d < %d). Aborting."
-                             % (len(accepted_data), settings.MINIMUM_STATIONS))
-
-    logger.info("Traces accepted for preliminary magnitude calculation: {}"
-                .format(len(accepted_data)))
-
-    pre_results = preliminary_magnitude(
-        accepted_data.p2p,
-        accepted_data.distance,
-        accepted_data.azimuth,
-        accepted_data.index,
-    )
-
-    pre_wp_mag = pre_results.magnitude
-    t_h = pre_results.timescale
-    logger.info("Preliminary t_h = %.2f" % t_h)
-
-    logger.info("OL1:")
-    logger.info("Average amplitude:  %.1em", pre_results.average_amplitude)
-    logger.info("Magnitude:          %.2f", pre_wp_mag)
-    logger.info("Strike:             %.1f°", pre_results.strike)
-    logger.info("Eccentricity (b/a): %.2f", pre_results.eccentricity)
-
-    ol1 = OL1Result(
-        preliminary_calc_details=pre_results,
-        used_traces=list(accepted_data.index),
-        nstations=len(accepted_data),
-        magnitude=round(pre_wp_mag, 1),
-    )
-    result = WPhaseResult(OL1=ol1, Event=event)
     if OL == 1:
         return result
 
-    #############  Output Level 2    #######################################
-    #############  Moment Tensor based on preliminary hypercenter (PDE) ####
-    # Much of what follows is the same as what was done above, but we will be
-    # using a different set of stations and can handle multiple components per
-    # station (i.e. horizontals also)
-    ########################################################################
+    with timer:
+        ol2data = computeOL2(data=data, event=event, greens=greens, result=result)
+    result.timing.ol2 = timer.duration
 
-    # Redefine and define some values according to the pre_wp_mag
-    Ta, Tb = get_corner_freqs_from_mag(pre_wp_mag)
-    logger.info("Filter corner periods: %.1f, %1f" % (Ta, Tb))
-    T = np.linspace(Ta,Tb,500)
-    freq = 1./T
-    omega = freq*2.*np.pi
+    assert result.OL2 is not None
 
-    # Build the Moment Rate Function (MRF):
-    greens = GreensFunctions(gfdir)
-    dt = greens.delta
-    MRF = MomentRateFunction(t_h, dt)
+    if OL == 2:
+        return result
 
-    # Building a stream with the synthetics and the observed displacements vector
-    tr_p2p = [] #Peak to peak amplitude of each trace.
-
-    # Preparing the data:
-    DIST = []
-    DATA_INFO = {} #Minimum info to be able to filter the displacements afterwards
-    st_sel = st_orig
-    trlist = np.array([tr.id for tr in st_orig])
-    for trid in trlist[:]:
-        trmeta = metadata[trid]
-        trlat = trmeta.latitude
-        trlon = trmeta.longitude
-        dist = locations2degrees(hyplat, hyplon, trlat, trlon)
-        t_p = ptimes.get(trid)
-
-        # W-phase time window
-        t1 = origin_time + t_p
-        t2 = t1 + dist*settings.WPHASE_CUTOFF
-        tr = st_sel.select(id = trid)[0]
-        dt = tr.stats.delta
-
-        tr.data = np.array(tr.data, dtype=float)
-        try:
-            response_amplitude = amplitude_at_frequency(trmeta, freq)
-        except UnknownTransferFunction:
-            logger.warning("Unknown transfer function. Skipping %s", tr.id)
-            trlist.remove(tr.id)
-            continue
-
-        response_coefficients = fit_instrument_response(
-            trmeta.sensitivity, freq, response_amplitude
-        )
-        if response_coefficients is None:
-            logger.warning("%s: Could not fit instrument response. Skipping this trace", tr.id)
-            trlist.remove(tr.id)
-            continue
-        else:
-            om0, h, G = response_coefficients
-
-        DATA_INFO[tr.id] = [om0, h, G, dt, t1, t2]
-
-        try:
-            tr.data = deconvolve_and_filter(
-                tr, om0, h, G, dt,
-                corners=4,
-                baselinelen=60./dt,
-                taperlen= 10.,
-                fmin = 1./Tb,
-                fmax = 1./Ta)
-
-        except DeconvolutionError as e:
-            logger.warning("%s: Skipping due to error in deconvolution: %s", tr.id, str(e))
-            trlist.remove(tr.id)
-            continue
-
-        #Check length of the trace:
-        tr.trim(t1, t2)
-        if len(tr) == 0:
-            logger.warning("%s: Trace is empty. Skipping this trace", tr.id)
-            trlist.remove(tr.id)
-            continue
-        tr_p2p.append(tr[:].max() - tr[:].min())
-
-        DIST.append(dist)
-
-    DIST = np.array(DIST)
-    trlist = [trlist[i] for i in np.argsort(DIST)]
-    tr_p2p = [tr_p2p[i] for i in np.argsort(DIST)]
-
-    # Rejecting outliers:
-    observed_displacements = np.array([]) # observed displacements vector.
-    trlen = [] # A list with the length of each station data.
-    trlist2 = trlist[:]
-
-    mrcoeff = settings.MEDIAN_REJECTION_COEFF
-    median_AMP = np.median(tr_p2p)
-    for i, amp in enumerate(tr_p2p):
-        if (amp > median_AMP*mrcoeff[1]
-        or amp < median_AMP*mrcoeff[0]):
-            trlist2.remove(trlist[i])
-            logger.warning("%s: Amplitude is %.2fx the median, which is "
-                           "outside our acceptable range of [%.2f, %.2f]. "
-                           "Rejecting this trace.",
-                           trlist[i],
-                           amp/median_AMP,
-                           mrcoeff[0],
-                           mrcoeff[1])
-
-        else:
-            tr = st_sel.select(id = trlist[i])[0]
-            observed_displacements =  np.append(observed_displacements, tr.data[:],0)
-            trlen.append(len(tr))
-    trlist = trlist2[:]
-
-    logger.info('number of traces for OL2: %d', len(trlist))
-
-    #### Inversion:
-    # Search for the optimal t_d
-    ##I need to test the optimal way to do this. map is taking too much time
-
-    # time delays for which we will run inversions (finally choosing the one with
-    # lowest misfit)
-    time_delays = np.arange(1., settings.MAXIMUM_TIME_DELAY)
-
-    # extract the greens function matrix for all time delays. Note that this does not
-    # perform an inversion, because OnlyGetFullGF=True.
-    GFmatrix = core_inversion(
-        0,
-        (hyplat, hyplon, hypdep),
-        (Ta, Tb),
-        MRF,
-        observed_displacements,
-        trlen,
-        metadata,
-        trlist,
-        gfdir=gfdir,
-        OnlyGetFullGF=True,
-        max_t_d=settings.MAXIMUM_TIME_DELAY,
-        ptimes=ptimes,
-    )
-
-    # inputs for the TIME DELAY search
-    inputs = [(t_d_test, GFmatrix, trlen, observed_displacements, settings.MAXIMUM_TIME_DELAY) for t_d_test in time_delays]
-    with ProcessPoolExecutor(max_workers=processes) as pool:
-        misfits = list(pool.map(get_timedelay_misfit_wrapper,inputs))
-
-    # Set t_d (time delay) and and t_h (half duration) to optimal values:
-    mis_min = int(np.array(misfits).argmin())
-    result.misfits = TimeDelayMisfits(array=misfits, min=mis_min)
-    t_d = t_h = time_delays[mis_min]
-    MRF = MomentRateFunction(t_h, dt)
-    logger.info("Source time function, time delay: %d, %f", len(MRF), t_d)
-    logger.info("revised t_h = %.2f" % t_h)
-
-    #### Removing individual bad fitting. this recursively removes stations with misfits
-    # outside of the acceptable range defined by the setting MISFIT_TOL_SEQUENCE.
-    M, misfit, GFmatrix = core_inversion(
-        t_d,
-        (hyplat, hyplon, hypdep),
-        (Ta, Tb),
-        MRF,
-        observed_displacements,
-        trlen,
-        metadata,
-        trlist,
-        gfdir=gfdir,
-        return_gfs=True,
-        ptimes=ptimes)
-
-    # Remove bad traces
-    for tol in settings.MISFIT_TOL_SEQUENCE:
-        # Make sure there are enough channels
-        GFmatrix, observed_displacements, trlist, trlen = remove_individual_traces(
-            tol,
-            M,
-            GFmatrix,
-            observed_displacements,
-            trlist,
-            trlen)
-
-        if len(trlist) < settings.MINIMUM_FITTING_CHANNELS:
-            msg = "Only {} channels with possibly acceptable fits. Aborting.".format(len(trlist))
-            logger.error(msg)
-            raise InversionError(msg, result=result)
-
-        M, misfit, GFmatrix = core_inversion(
-            t_d,
-            (hyplat, hyplon, hypdep),
-            (Ta,Tb),
-            MRF,
-            observed_displacements,
-            trlen,
-            metadata,
-            trlist,
-            gfdir=gfdir,
-            return_gfs=True,
-            ptimes=ptimes,
-        )
-
-    syn = (M[0]*GFmatrix[:,0] + M[1]*GFmatrix[:,1] +
-           M[3]*GFmatrix[:,2] + M[4]*GFmatrix[:,3] +
-           M[5]*GFmatrix[:,4])
-
-
-    trace_lengths = list(zip(trlist, trlen))
-    result.OL2 = make_result(
-        OL2Result,
-        M,
-        misfit=misfit,
-        depth=hypdep,
-        time_delay=t_d,
-        used_traces=trlist,
-        moment_tensor=M,
-        observed_displacements=observed_displacements,
-        synthetic_displacements=syn,
-        trace_lengths=OrderedDict(trace_lengths),
-    )
-
-    if len(trlen) == 0:
+    if len(result.OL2.used_traces) == 0:
         logger.warning("Could not calculate OL3: no data within tolerance")
         return result
-    elif OL == 2:
-        return result
 
-    #############  Output Level 3   #############################
-    ###Moment Tensor based on grid search  ######################
-    ###for the optimal centroid's location #####################
+    with timer:
+        computeOL3(data=ol2data, event=event, greens=greens, result=result, processes=processes)
+    result.timing.ol3 = timer.duration
 
-    logger.info("Performing grid search for best centroid location.")
-    lat_grid, lon_grid = get_latlon_for_grid(hyplat, hyplon, dist_lat=3.0,
-                                             dist_lon=3.0, delta=0.8)
-    logger.debug("Grid size: %d * %d", len(lon_grid), len(lat_grid))
-    latlons = [(lat, lon) for lat in lat_grid for lon in lon_grid]
+    if do_new_calculation:
+        with timer:
+            computeNew(data=data, event=event, greens=greens, result=result, t_h=result.OL2.time_delay)
+        result.timing.new = timer.duration
 
-    grid_search_inputs = [
-        (t_d, (lat, lon, hypdep), (Ta, Tb), MRF,
-         observed_displacements, trlen, metadata, trlist, greens, {"ptimes": ptimes})
-        for lat, lon in latlons
-    ]
+    # for l, r, t in (
+    #     ("OL1", None, result.timing.ol2),
+    #     ("OL2", result.OL2.misfit, result.timing.ol2),
+    #     ("OL3", result.OL3.misfit, result.timing.ol3),
+    #     ("New", result.new.misfit, result.timing.new)
+    # ):
+    #     mf = r and f"{r:2.1f}%" or "-----"
+    #     logger.info(f"{l}: {mf} in {t:3.2f}s")
 
-    i_grid, _, _, grid_search_results = minimize_misfit(
-        grid_search_inputs,
-        processes=processes
-    )
-    cenlat, cenlon = latlons[i_grid]
-
-    logger.info("Performing grid search for best depth.")
-    deps_grid = get_depths_for_grid(hypdep, greens)
-    logger.debug("Depth grid size: %d", len(deps_grid))
-
-    depth_search_inputs = [
-        (t_d, (cenlat, cenlon, depth), (Ta,Tb),
-         MRF, observed_displacements, trlen, metadata, trlist, greens, {"ptimes": ptimes})
-        for depth in deps_grid
-    ]
-
-    i_dep, _, _, _ = minimize_misfit(
-        depth_search_inputs,
-        processes=processes
-    )
-    cendep = deps_grid[i_dep]
-
-    ### Final inversion!!
-    # While we already inverted at this centroid location during the depth
-    # search, we threw away the corresponding synthetic waveforms; so we need
-    # to re-run the inversion to get them.
-
-    M, misfit, GFmatrix = core_inversion(t_d, (cenlat, cenlon, cendep),
-                                         (Ta,Tb), MRF, observed_displacements,
-                                         trlen, metadata, trlist, gfdir=gfdir,
-                                         return_gfs=True, ptimes=ptimes)
-
-    syn = (M[0]*GFmatrix[:,0] + M[1]*GFmatrix[:,1]
-          + M[3]*GFmatrix[:,2] + M[4]*GFmatrix[:,3]
-          + M[5]*GFmatrix[:,4])
-
-
-    trace_lengths = list(zip(trlist, trlen))
-
-    result.OL3 = make_result(
-        OL3Result,
-        M,
-        misfit=misfit,
-        depth=cendep,
-        time_delay=t_d,
-        centroid=(cenlat, cenlon, cendep),
-        used_traces=trlist,
-        moment_tensor=M,
-        observed_displacements=observed_displacements,
-        synthetic_displacements=syn,
-        trace_lengths=OrderedDict(trace_lengths),
-        grid_search_candidates=[row[1] for row in grid_search_inputs],
-        grid_search_results=grid_search_results,
-    )
     return result
 
 
-def MomentRateFunction(t_h, dt):
+def moment_rate_function(t_h, dt):
     '''
     Get the moment rate function to be convolved with the GFs.
 
@@ -588,10 +628,10 @@ def MomentRateFunction(t_h, dt):
     if trianglen <= 5:
         trianglen = 5
 
-    MRF = triang(trianglen)
-    MRF /= np.sum(MRF)
+    mrf = triang(trianglen)
+    mrf /= np.sum(mrf)
 
-    return MRF
+    return mrf
 
 
 def get_corner_freqs_from_mag(Mw):
@@ -618,16 +658,30 @@ def get_corner_freqs_from_mag(Mw):
     return (Ta_func(Mw), Tb_func(Mw))
 
 
+# Attenuation relation q(Δ) for W-phase amplitudes as a function of distance.
+# Lifted directly from Kanamori et al 2008.
+_attenuation_relation = (
+    interp1d([5.,  10., 20., 30., 40., 50.,  60.,  70.,  80.,  90.5],
+             [1.5, 1.4, 1.2, 1.0, 0.7, 0.56, 0.61, 0.56, 0.50, 0.52 ],
+             kind = 'cubic')
+)
+def correct_amplitudes_for_attenuation(amplitude: np.ndarray, distance: np.ndarray):
+    return amplitude / _attenuation_relation(distance)
 
-def preliminary_magnitude(tr_p2p, dists, azis, trids,
-                          regularization=settings.AMPLITUDE_REGULARIZATION) -> PreliminaryMagnitudeFit:
+def preliminary_magnitude(
+    tr_p2p: np.ndarray,
+    dists: np.ndarray,
+    azis: np.ndarray,
+    trids: List[str],
+    regularization: float = settings.AMPLITUDE_REGULARIZATION,
+) -> PreliminaryMagnitudeFit:
     '''
     Compute the preliminary magnitude.
 
-    :param list tr_p2p: Peak to peak amplitudes for each trace.
-    :param list dists: station - epi distances in deg for each trace.
-    :param list azis: station - epi azimuths in degrees for each trace.
-    :param list trids: station IDs
+    :param tr_p2p: Peak to peak amplitudes for each trace.
+    :param dists: station - epi distances in deg for each trace.
+    :param azis: station - epi azimuths in degrees for each trace.
+    :param trids: station IDs
 
     :return: tuple containing:
 
@@ -637,13 +691,7 @@ def preliminary_magnitude(tr_p2p, dists, azis, trids,
         #. Preliminary half duration for the moment rate func in seconds.
     '''
 
-    # Attenuation relation q(Δ) for W-phase amplitudes as a function of distance.
-    # Lifted directly from Kanamori et al 2008.
-    q = interp1d([5.,  10., 20., 30., 40., 50.,  60.,  70.,  80.,  90.5],
-                 [1.5, 1.4, 1.2, 1.0, 0.7, 0.56, 0.61, 0.56, 0.50, 0.52 ],
-                 kind = 'cubic')
-    corrected_amplitudes = tr_p2p / q(dists)
-
+    corrected_amplitudes = correct_amplitudes_for_attenuation(tr_p2p, dists)
     azis_rad = np.array(azis) * np.pi/180. # Φ: azimuths in radians
     N = len(tr_p2p)
 
@@ -810,7 +858,7 @@ def deconvolve_and_filter(
         # explicitly skip these traces.
         raise DeconvolutionError("Trace too short to deconvolve, skipping: {}".format(tr.id))
 
-    data = np.array(tr.data,dtype='float')
+    data = np.array(tr.data, dtype=float)
 
     baseline = np.mean(data[:int(baselinelen/dt)])
     nwin = int(taperlen*len(data)/100.)
@@ -844,90 +892,49 @@ def deconvolve_and_filter(
     return dis
 
 
-def core_inversion(
-    t_d,
-    cmtloc,
-    periods,
-    MRF,
-    observed_displacements,
-    trlen,
-    metadata,
-    trlist,
-    gfdir,
-    ptimes,
-    return_gfs=False,
-    residuals=False,
-    OnlyGetFullGF=False,
-    max_t_d=200,
+def trace_indices(traces: pd.Series, padding: int = 0) -> pd.DataFrame:
+    """Given a series of traces, return a dataframe detailing the indices
+    these traces will have when concatenated together."""
+    trlen = traces.map(lambda tr: len(tr) + padding)
+    end = np.cumsum(trlen)
+    start = np.roll(end, 1)
+    start[0] = 0
+    return pd.DataFrame(dict(
+        trlen=trlen, # this supplies the index
+        start=start,
+        end=end,
+    ))
+
+class Point(NamedTuple):
+    latitude: float
+    longitude: float
+    depth: float
+
+def get_greens_for_dataset(
+    greens: GreensFunctions,
+    data: pd.DataFrame,
+    centroid: Point,
+    periods: Tuple[float, float],
+    mrf: np.ndarray,
+    t_d: int,
+    padding: int = 0,
 ):
-    '''
-    Perform the actual W-phase inversion.
-
-    :param float t_d: Time delay
-    :param tuple cmtloc: (lat, lon, depth) of the centroid's location.
-    :param tuple periods: (Ta,Tb), passband periods.
-    :param array MRF: Moment rate function.
-    :param array observed_displacements: Array containing concatenated traces of observed disp.
-    :param array trlen: Array containing the length of each trace.
-    :param dict metadata: Dictionary with the metadata of each station.
-    :param list trlist: List with the station id which will contribute to the inv.
-    :param gfdir: Path to the greens functions or a GreensFunctions instances.
-    :param bool hdf5_flag: *True* if the greens functions are stored in HDF5, *False* if they are in SAC.
-    :param bool return_gfs: *True* if the greens functions should be returned.
-    :param bool residuals: *True*, return the 'raw' misfit from the least squares inversion,
-        *False*, return the 'relative' misfit as a percentage: i.e. the 'raw' misfit divided by
-        the norm of the synthetics.
-    :param bool OnlyGetFullGF: *True*, return the greens function matrix for the maximum time delay (*max_t_d*)
-        without performing the inversion, *False*, perform the inversion for the time delay given
-        by *t_d*.
-    :param numeric max_t_d: Maximum time delay to consider if *OnlyGetFullGF = True*.
-
-    :return: What is returned depends on the values of the parameters as described below.
-
-        - If *OnlyGetFullGF = True*, then just the greens function matrix.
-        - Otherwise a tuple containing:
-
-            0. moment tensor components in Nm ['RR', 'PP', 'TT', 'TP', 'RT', 'RP']
-            #. misfit (percent L2 norm misfit error of the solution), and
-
-            If *return_gfs = True*
-
-            2. The greens function matrix also.
-    '''
-    logger.debug("core_inversion(t_d=%d, c=(%.2f, %.2f, %.2f), #tr=%d)", t_d, cmtloc[0], cmtloc[1], cmtloc[2], len(trlist))
-    if isinstance(gfdir, GreensFunctions):
-        greens = gfdir
-    else:
-        greens = GreensFunctions(gfdir)
     delta = greens.delta
-
-    hyplat, hyplon, hypdep = cmtloc
     Ta, Tb = periods
+    # Index of the first value that will be valid after convolution with mrf.
+    t_pad = len(mrf) // 2
 
-    # Index of the first value that will be valid after convolution with MRF.
-    first_valid_time = int(len(MRF)/2.)
+    # We're combining the traces of all channels into a single trace.
+    # We flatten this dimension (instead of adding another numpy axis) because
+    # different stations can have traces of different length.
+    indices = trace_indices(data.trace, padding=padding)
+    GFmatrix = np.empty((indices.end[-1], 5))
 
-    # the indices of the beginning and end of each trace in observed displacements
-    indexes =  np.array(np.concatenate((np.array([0.]), np.cumsum(trlen))), dtype='int')
-
-
-    if OnlyGetFullGF:
-        max_t_d = int(max_t_d)
-        Nst = len(trlen)
-        GFmatrix = np.zeros((np.array(trlen, dtype=int).sum() + max_t_d*Nst, 5))
-        tb = 0
-    else:
-        GFmatrix = np.zeros((np.array(trlen, dtype=int).sum(), 5))
-
-    #### Inversion:
-    for i, trid in enumerate(trlist):
-        trmeta = metadata[trid]
-        trlat = trmeta.latitude
-        trlon = trmeta.longitude
-
-        dist = locations2degrees(hyplat, hyplon, trlat, trlon)
-        distm, azi, bazi  =  gps2dist_azimuth(hyplat, hyplon, trlat, trlon)
-        t_p = ptimes.get(trid)
+    def get_raw_synth_for(row: ChannelData):
+        trlat = row.metadata.latitude
+        trlon = row.metadata.longitude
+        dist = locations2degrees(centroid.latitude, centroid.longitude, trlat, trlon)
+        azi = gps2dist_azimuth(centroid.latitude, centroid.longitude, trlat, trlon)[1]
 
         # Select greens function and perform moment tensor rotation in the azimuth
         # DETAIL: The greens functions are stored for zero azimuth (which we can do
@@ -935,75 +942,209 @@ def core_inversion(
         # moment tensor (or equivalently synthetic trace) we rotate them. For details
         # see Kanamori and Rivera 2008.
         azi_r = -azi*np.pi/180
-        synth = greens.select_rotated(trid[-1], dist, hypdep, azi_r)
+        return greens.select_rotated(row.component, dist, centroid.depth, azi_r)
 
-        ##################################
-        # Extract W phase from synthetics.
+    # Stack all the raw synthetics in a single array for vectorized processing
+    allsynth = np.stack(data.apply(get_raw_synth_for, axis=1)) # type: ignore
 
-        # Use only what we think is noise to calculate and compensate the mean
-        synth -= np.mean(synth[..., :60], axis=-1)[:, None]
+    # Use only what we think is noise to calculate and compensate the mean
+    allsynth -= np.mean(allsynth[..., :60], axis=-1)[..., np.newaxis]
 
-        # Convolve with moment rate function
-        synth = ndimage.convolve1d(synth, MRF, axis=-1, mode='nearest')\
-            [:, first_valid_time-2:-first_valid_time]
+    # Convolve with moment rate function
+    allsynth = convolve1d(allsynth, mrf, axis=-1, mode="nearest")[..., t_pad-2:-t_pad]
 
-        # Pad data back to original length
-        fillvec1 = synth[:, 0, None] * np.ones(first_valid_time)
-        fillvec2 = synth[:, -1, None] * np.ones(first_valid_time)
-        synth = np.concatenate((fillvec1, synth, fillvec2), axis=-1)
-        synth -= np.mean(synth[:, :60], axis=-1)[:, None]
+    # Pad data back to original length by extending values at edges
+    allsynth = pad1d(allsynth, (t_pad, t_pad), axis=-1, mode="edge")
+    allsynth -= np.mean(allsynth[..., :60], axis=-1)[..., np.newaxis]
 
-        # Bandpass filter to extract W phase
-        def wphase_filter(trace):
-            return bandpassfilter(trace, delta, 4, 1./Tb, 1./Ta)
-        synth = np.apply_along_axis(wphase_filter, -1, synth)
+    # Bandpass filter to extract W phase
+    allsynth = bandpassfilter(allsynth, delta, 4, 1/Tb, 1/Ta, axis=-1)
 
-        if OnlyGetFullGF:
-            synth = ltrim(synth, t_p - max_t_d, delta)
-            synth = synth[:, :trlen[i] + max_t_d]
-        else:
-            synth = ltrim(synth, t_p - t_d, delta)
-            synth = synth[:, :trlen[i]]
+    for synth, (_, row) in zip(allsynth, (data.join(indices)).iterrows()):
+        # The time interval we copy here depends on each trace's p-time, thus the loop.
+        synth = ltrim(synth, row.ptime - t_d, delta)
+        synth = synth[:, :row.trlen]
 
-        if OnlyGetFullGF:
-            ta = tb
-            tb = ta + max_t_d + (indexes[i+1] - indexes[i])
-        else:
-            ta = indexes[i]
-            tb = indexes[i+1]
+        output = GFmatrix[row.start:row.end]
 
         # the first of the following lines are due to constraint that volume does not change
-        GFmatrix[ta:tb, 0] = synth[0][:] - synth[1][:]
-        GFmatrix[ta:tb, 1] = synth[2][:] - synth[1][:]
-        GFmatrix[ta:tb, 2] = synth[4][:]
-        GFmatrix[ta:tb, 3] = synth[5][:]
-        GFmatrix[ta:tb, 4] = synth[3][:]
+        output[:, 0] = synth[0][:] - synth[1][:]
+        output[:, 1] = synth[2][:] - synth[1][:]
+        output[:, 2] = synth[4][:]
+        output[:, 3] = synth[5][:]
+        output[:, 4] = synth[3][:]
 
-    if OnlyGetFullGF:
-        return GFmatrix
+    return GFmatrix
+
+class InversionResult(NamedTuple):
+    tensor: np.ndarray
+    misfit: float
+    greens_matrix: np.ndarray
+
+def _inversion_for_scipy(
+    x: Sequence,
+    data: pd.DataFrame,
+    periods: Tuple[float, float],
+    greens: GreensFunctions,
+    t_d: float,
+    t_h: float,
+    observed_displacements: Optional[np.ndarray] = None,
+) -> InversionResult:
+    """core_inversion wrapper for use with scipy.optimize."""
+    lat, lon, depth = x
+    return core_inversion(
+        t_d=round(t_d),
+        centroid=Point(lat, lon, depth),
+        data=data,
+        periods=periods,
+        mrf=moment_rate_function(t_h, greens.delta),
+        greens=greens,
+        observed_displacements=observed_displacements,
+    )
+
+def _misfit_for_scipy(
+    x: Sequence,
+    data: pd.DataFrame,
+    periods: Tuple[float, float],
+    greens: GreensFunctions,
+    t_d: float,
+    t_h: float,
+    observed_displacements: Optional[np.ndarray] = None,
+) -> float:
+    return _inversion_for_scipy(x, data, periods, greens, t_d, t_h, observed_displacements).misfit
+
+class NonlinearParams(NamedTuple):
+    t_d: float
+    t_h: float
+    latitude: float
+    longitude: float
+    depth: float
+
+def omni_minimize(
+    data: pd.DataFrame,
+    greens: GreensFunctions,
+    periods: Tuple[float, float],
+    t_d: float,
+    t_h: float,
+    x0: Point,
+    tol: Optional[float] = 1e-2,
+) -> Tuple[Point, InversionResult]:
+    if "trace" not in data:
+        data = data.copy()
+        data["trace"] = data.apply(waveform_preprocessor(*periods), axis=1)
+    misfit = _misfit_for_scipy(x0, data, periods, greens, t_d, t_h)
+    logger.info("Initial guess: (%.2f %.2f %.2f) => %.1f%%", *x0, misfit)
+    obs = np.concatenate(data.trace)
+    optimized = minimize(
+        _misfit_for_scipy,
+        x0,
+        args=(
+            data,
+            periods,
+            greens,
+            t_d,
+            t_h,
+            obs,
+        ),
+        method="Nelder-Mead",
+        bounds=(
+            (-90, 90),
+            (None, None),
+            (greens.depths.min(), greens.depths.max()),
+        ),
+        options={
+            "xatol": tol,
+            "fatol": tol,
+            "initial_simplex": [
+                [x0[0], x0[1], 4*x0[2]],
+                [x0[0]-4, x0[1]-2, 1],
+                [x0[0]+4, x0[1]-2, 1],
+                [x0[0], x0[1]+4, 1],
+            ],
+        },
+    )
+    inversion = _inversion_for_scipy(optimized.x, data, periods, greens, t_h, t_h, obs)
+    logger.info("Minimizer: (%.2f %.2f %.2f) => %.1f%%", *optimized.x, optimized.fun)
+    return Point(*optimized.x), inversion
+
+def core_inversion(
+    data: pd.DataFrame,
+    periods: Tuple[float, float],
+    t_d: int,
+    centroid: Point,
+    mrf: np.ndarray,
+    greens: GreensFunctions,
+    observed_displacements: Optional[np.ndarray] = None,
+) -> InversionResult:
+    '''
+    Perform the actual W-phase inversion.
+
+    :param array observed_displacements: Array containing concatenated traces of observed displacements. If omitted, we rebuild it from data.
+    :param float t_d: Time delay
+    :param tuple cmtloc: (lat, lon, depth) of the centroid's location.
+    :param tuple periods: (Ta,Tb), passband periods.
+    :param array mrf: Moment rate function.
+    :param array trlen: Array containing the length of each trace.
+    :param dict metadata: Dictionary with the metadata of each station.
+    :param list trlist: List with the station id which will contribute to the inv.
+    :param greens: Path to the greens functions or a GreensFunctions instances.
+    '''
+
+    GFmatrix = get_greens_for_dataset(
+        greens=greens,
+        data=data,
+        centroid=centroid,
+        periods=periods,
+        mrf=mrf,
+        t_d=t_d,
+    )
 
     # perform the inversion
-    inversion = lstsq(GFmatrix, observed_displacements, rcond=None)
-    M = inversion[0]
+    obs: np.ndarray = (
+        np.concatenate(data.trace)
+        if observed_displacements is None
+        else observed_displacements
+    )
+    M, residual, *_  = lstsq(GFmatrix, obs, rcond=None)
+
+    # def _log(label, x):
+    #     logger.info(f"{label}: {x.dtype}{x.shape}\n{x.flags}")
+    #_log("GF", GFmatrix)
+    #_log("observed", observed_displacements)
+    #_log("M", M)
 
     # construct the synthetics
-    syn = GFmatrix.dot(M)
+    # def build_synthetics(): return GFmatrix @ M
+    # syn = build_synthetics()
 
-    # set the 'sixth' element of the moment tensor (corresponds to the
-    # constraint added 20 lines or so above)
-    M = np.insert(M, 2, -M[0]-M[1])
+    # from numpy.testing import assert_almost_equal
+    # assert_almost_equal(np.sum((syn-observed_displacements)**2), residual)
+    # assert_almost_equal(np.sum(syn**2), syn2)
+    #syn = GFmatrix @ M
+    misfit = 100 * np.sqrt(residual / (obs @ obs))
+    # misfit = compute_misfit(residual, GFmatrix, M)
 
-    # extract the residuals and scale if required
-    if residuals:
-        misfit = float(inversion[1])
-    else:
-        misfit = 100.*np.sqrt(np.sum((syn-observed_displacements)**2)/np.sum(syn**2))
+    logger.debug(
+        "core_inversion(t_d=%d, c=(%.2f, %.2f, %.2f), #tr=%d) => %.1f%%",
+        t_d, centroid.latitude, centroid.longitude, centroid.depth, len(data), misfit
+    )
 
-    if return_gfs:
-        return M, misfit, GFmatrix
+    return InversionResult(tensor=deviatoric_to_full(M), misfit=misfit, greens_matrix=GFmatrix)
 
-    return M, misfit
+def deviatoric_to_full(mt: np.ndarray) -> np.ndarray:
+    """Convert the 5-element representation of a deviatoric moment tensor to
+    its 6-element representation."""
+    return np.insert(mt, 2, - mt[0] - mt[1])
 
+def full_to_deviatoric(mt: np.ndarray) -> np.ndarray:
+    """Convert the 6-element representation of a deviatoric moment tensor to
+    its 5-element representation."""
+    return np.delete(mt, 2)
+
+def compute_misfit(residual, GFmatrix, M):
+    syn2 = np.einsum("ij,j,ik,k->", GFmatrix, M, GFmatrix, M,
+                     optimize=['einsum_path', (0, 1), (0, 2), (0, 1)])
+    return 100*np.sqrt(residual/syn2)
 
 
 def get_depths_for_grid(hypdep, greens, length=100):
@@ -1045,127 +1186,53 @@ def get_latlon_for_grid(hyplat,hyplon, dist_lat = 1.2,
 
 
 
-def core_inversion_wrapper(allarg):
+def core_inversion_wrapper(kwargs: Mapping[str, Any], fixed_kwargs: Mapping[str, Any]):
     '''
     Wrapper for :py:func:`core_inversion` for use with
     :py:class:`multiprocessing.Pool`.
 
-    :return: None
+    Doesn't return greens functions to avoid pickling overhead.
     '''
-
-    if isinstance(allarg[-1], dict):
-        kwargs = allarg[-1]
-        arg = allarg[:-1]
-    else:
-        kwargs = {}
-        arg = allarg
-
-    try:
-        return core_inversion(*arg,**kwargs)
-    except Exception:
-        raise Exception("".join(traceback.format_exception(*sys.exc_info())))
+    result = core_inversion(**{**fixed_kwargs, **kwargs})
+    return result.tensor, result.misfit
 
 
-def minimize_misfit(inputs, processes=None):
+def minimize_misfit(inputs: Sequence[Mapping], parameters: Mapping[str, Any], processes=None):
     """Given a list of input tuples for core_inversion, find the one with the
     lowest misfit.
 
-    :param inputs: an iterable of tuples to provided to core_inversion as args.
+    :param inputs: an iterable of mappings to be provided to core_inversion as kwargs.
+    :param parameters: fixed kwargs for core_inversion
     :param processes: number of parallel processes to use.
     :return: A tuple (index_of_minimizer, moment_tensor, misfit, results list)."""
-    with ProcessPoolExecutor(max_workers=processes) as pool:
-        results = list(pool.map(core_inversion_wrapper, inputs))
+    worker = partial(core_inversion_wrapper, fixed_kwargs=parameters)
+    # with ProcessPoolExecutor(max_workers=processes) as pool:
+    #     results = list(pool.map(worker, inputs))
+    results = list(map(worker, inputs))
     misfits = np.array([x[1] for x in results])
     i_min = misfits.argmin()
     return i_min, results[i_min][0], results[i_min][1], results
 
 
-def remove_individual_traces(tol, M, GFmatrix, observed_displacements,
-                                  trlist, trlen):
-    '''
-    Remove any trace with an indivudual misfit higher than *tol*.
-
-    :param float tol: The maximum acceptable value for a misfit.
-    :param array M: Moment tensor.
-    :param array GFmatrix: Greens function matrix.
-    :param array Observed Disp: The observed displacements.
-    :param list trlist: ???
-    :param list trlen: List containing the lengths of the traces in *trlist*.
-
-    :return: Tuple containing the
-
-        0. greens function matrix,
-        #. observed displacements,
-        #. trace list, and
-        #. list of the lengths of the traces in the trace list
-
-        for the traces which remain.
-    '''
-
-    GFmatrix_fix = np.zeros((1,5))
-    ObservedDisp_fix = np.zeros(1)
-    trlist_fix = []
-    trlen_fix = []
-    M = np.delete(M,2)
-
-    # construct the synthetic trace
-    syn = GFmatrix.dot(M)
-    j = 0
-    for i, trid in enumerate(trlist):
-        # get the observed and synthetic traces for a channel
-        n1 = j
-        n2 = trlen[i] + j
-        obs = observed_displacements[n1:n2]
-        syn2 = syn[n1:n2]
-
-        # calculate the misfit for the channel
-        misfit = 100.*np.linalg.norm(syn2-obs)\
-                 /np.linalg.norm(syn2)
-
-        j += trlen[i]
-
-        # add the trace to the remaining traces if misfit is within tolerance.
-        if misfit <= tol :
-            ObservedDisp_fix = np.append(ObservedDisp_fix, obs)
-            GFmatrix_fix = np.append(GFmatrix_fix, GFmatrix[n1:n2,:], axis=0)
-            trlist_fix.append(trid)
-            trlen_fix.append(trlen[i])
-
-    # build the result
-    GFmatrix = GFmatrix_fix[1:,:]
-    observed_displacements = ObservedDisp_fix[1:]
-    trlist = trlist_fix[:]
-    trlen = trlen_fix[:]
-
-    return GFmatrix, observed_displacements, trlist, trlen
-
-def get_timedelay_misfit_wrapper(args):
-    return get_timedelay_misfit(*args)
-
-
-
 def get_timedelay_misfit(t_d, GFmatrix, trlen, observed_displacements, max_t_d):
-    try:
-        max_t_d = int(max_t_d)
-        t_d = int(t_d)
-        t_d2 = max_t_d - t_d
-        GFmatrix_sm = np.zeros((np.array(trlen,dtype=np.int).sum(),5))
-        cumtrlens = np.concatenate(([0], np.array(trlen,dtype=np.int).cumsum()))
-        tb_fm = 0
-        for i_ntr, ta in enumerate(cumtrlens[:-1]):
-            l = trlen[i_ntr]
-            tb = ta + l
-            ta_fm = tb_fm
-            tb_fm = ta_fm +  max_t_d + tb-ta
-            GFmatrix_sm[ta:tb] = GFmatrix[ta_fm + t_d2 :ta_fm + t_d2 + l]
+    max_t_d = int(max_t_d)
+    t_d = int(t_d)
+    t_d2 = max_t_d - t_d
+    GFmatrix_sm = np.zeros((np.array(trlen, dtype=int).sum(),5))
+    cumtrlens = np.concatenate(([0], np.array(trlen, dtype=int).cumsum()))
+    tb_fm = 0
+    for i_ntr, ta in enumerate(cumtrlens[:-1]):
+        l = trlen[i_ntr]
+        tb = ta + l
+        ta_fm = tb_fm
+        tb_fm = ta_fm +  max_t_d + tb-ta
+        GFmatrix_sm[ta:tb] = GFmatrix[ta_fm + t_d2 :ta_fm + t_d2 + l]
 
-        inversion = lstsq(GFmatrix_sm, observed_displacements, rcond=None)
-        return inversion[1][0]
-    except Exception:
-        raise Exception("".join(traceback.format_exception(*sys.exc_info())))
+    inversion = lstsq(GFmatrix_sm, observed_displacements, rcond=None)
+    return inversion[1][0]
 
 
-def make_result(cls, M: Sequence[float], misfit: float, **extra):
+def make_result(cls, M: ArrayLike, misfit: float, **extra):
     """Given a moment tensor, print some pretty log messages describing it and
     convert it to a standard result object.
 
@@ -1184,13 +1251,14 @@ def make_result(cls, M: Sequence[float], misfit: float, **extra):
     ------
     OL2Result
     """
+    M = np.asarray(M)
     logger.info("%s Result:" % cls.__name__)
     logger.info("%5s % 10s % 10s % 10s", "", "r", "t", "p")
     logger.info("%5s %+.3e %+.3e %+.3e", "r", M[0], M[3], M[4])
     logger.info("%5s % 10s %+.3e %+.3e", "t", "",   M[1], M[5])
     logger.info("%5s % 10s % 10s %+.3e", "p", "",   "",   M[2])
     logger.info("misfit: %.0f%%", misfit)
-    M2 = np.asarray(M) ** 2
+    M2 = M**2
     m0 = np.sqrt(0.5 * (M2[0] + M2[1] + M2[2]) + M2[3] + M2[4] + M2[5])
     mag = 2./3.*(np.log10(m0)-9.10)
     logger.info("m0: % e", m0)

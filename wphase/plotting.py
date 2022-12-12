@@ -7,6 +7,7 @@ from builtins import range
 
 import logging
 from collections import OrderedDict
+from cartopy.crs import PlateCarree
 
 import numpy as np
 import matplotlib.colors as mcols
@@ -118,7 +119,7 @@ def plot_grid_search(
     fig.text(.5, -.05, grid_legend, horizontalalignment='center')
     fig.savefig(filename, bbox_inches='tight')
 
-def plot_station_coverage(location, lats, lons, mt=None, filename=None, fig=None):
+def plot_station_coverage(location, trids, lats, lons, mt=None, filename=None, fig=None):
     """Plot a map showing the stations used in a W-Phase solution."""
 
     (elat, elon) = location
@@ -140,6 +141,11 @@ def plot_station_coverage(location, lats, lons, mt=None, filename=None, fig=None
 
     ax.scatter(lons, lats, transform=coords,
                s=60, c='blue', marker='o', edgecolors='none', zorder=10)
+
+    latlon_crs = PlateCarree()
+    for lon, lat, trid in zip(lons, lats, trids):
+        xy = ax.projection.transform_point(lon, lat, src_crs=latlon_crs)
+        ax.annotate(trid, xy)
 
     from warnings import warn
     if mt is not None:

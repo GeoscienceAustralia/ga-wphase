@@ -5,6 +5,7 @@ import numpy as np
 from typing import Optional
 from collections import defaultdict
 from traceback import format_exc
+from time import perf_counter
 
 # to avoid: Exception _tkinter.TclError
 import matplotlib
@@ -242,7 +243,6 @@ def plot_and_save_beachball(M, working_dir, OL):
 
 def post_process_wpinv(
     output: model.WPhaseResult,
-    WPOL,
     working_dir,
     eqinfo: model.Event,
     metadata,
@@ -250,7 +250,7 @@ def post_process_wpinv(
     make_plots=True):
     traces = None
     MT = None
-    mtResult: Optional[model.OL2Result] = output.OL3 or output.OL2
+    mtResult: Optional[model.OL2Result] = output.new or output.OL3 or output.OL2
 
     if output.OL1:
         traces = output.OL1.used_traces
@@ -302,18 +302,20 @@ def post_process_wpinv(
             )
 
     if isinstance(mtResult, model.OL3Result):
-        cenloc = mtResult.centroid
+        lat, lon, depth = cenloc = mtResult.centroid
 
         output.MomentTensor = convert_to_antelope(MT, cenloc)
 
         # Only 3 has cenloc...
         output.Centroid = model.CentroidLocation(
-            depth=round(cenloc[2], 1),
-            latitude=round(cenloc[0], 3),
-            longitude=round(cenloc[1], 3),
+            depth=round(depth, 1),
+            latitude=round(lat, 3),
+            longitude=round(lon, 3),
         )
 
-        if make_maps:
+        if make_maps and not mtResult.grid_search_candidates:
+            output.add_warning("No grid search candidates found in result, so can't make grid search map.")
+        elif make_maps and mtResult.grid_search_candidates:
             # draw the grid search plot
             coords = np.asarray(mtResult.grid_search_candidates)
             misfits = np.array([x[1] for x in mtResult.grid_search_results])
@@ -357,12 +359,13 @@ def post_process_wpinv(
                 settings.STATION_DISTRIBUTION_PREFIX)
             plot_station_coverage(
                 (eqinfo.latitude, eqinfo.longitude),
+                traces,
                 lats,
                 lons,
                 mt=MT,
                 filename=stationDistPrefix + '.png')
         except Exception:
-            wphase_output.add_warning("Failed to create station distribution plot. {}".format(format_exc()))
+            output.add_warning("Failed to create station distribution plot. {}".format(format_exc()))
 
 
 def decomposeMT(M):
@@ -387,3 +390,11 @@ def decomposeMT(M):
     M_DC = (1./2.)*(M1 - M3 - abs(M1 + M3 - 2*M2))
     M = abs(M_CLVD) + abs(M_DC)
     return abs(M_DC)/M, abs(M_CLVD)/M
+
+
+class SimpleTimer:
+    def __enter__(self, *_, **__):
+        self._t0 = perf_counter()
+        return self
+    def __exit__(self, *_, **__):
+        self.duration = perf_counter() - self._t0

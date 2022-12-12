@@ -10,15 +10,13 @@ from typing import Optional
 import obspy
 from obspy.clients.fdsn import Client
 from obspy.core.inventory import Inventory
-from obspy.core.utcdatetime import UTCDateTime
 
 from wphase import settings
 from wphase.data_acquisition import build_metadata_dict, get_waveforms
 from wphase.psi.core import wpinv
 from wphase.psi.exceptions import InversionError
 from wphase.psi.model import Event, WPhaseResult
-from wphase.wputils import (NoProfiler, OutputDict, WPInvProfiler,
-                            post_process_wpinv)
+from wphase.wputils import (NoProfiler, WPInvProfiler, post_process_wpinv)
 
 logger = logging.getLogger(__name__)
 
@@ -158,10 +156,8 @@ def runwphase(
         t_beforeP = 1500.,
         t_afterWP = 60.,
         dist_range = [5.,90.],
-        add_ptime = True,
         bulk_chunk_len = 200,
         prune_cutoffs = None,
-        use_only_z_components = True,
         inventory=None,
         waveforms=None,
         pickle_inputs=False,
@@ -223,17 +219,12 @@ def runwphase(
             t_afterWP = t_afterWP,
             client = client,
             dist_range = dist_range,
-            add_ptime = add_ptime,
             bulk_chunk_len = bulk_chunk_len,
             prune_cutoffs = prune_cutoffs,
             waveforms = waveforms,
             save_path = save_waveforms,
         )
 
-        if use_only_z_components:
-            streams = streams.select(component = 'Z')
-
-            logger.info('%d traces remaining after restricting to Z', len(streams))
 
         if output_dir and pickle_inputs:
             streams_pickle_file = os.path.join(output_dir, 'streams.pkl')
@@ -267,7 +258,6 @@ def runwphase(
             try:
                 post_process_wpinv(
                     output = wphase_output,
-                    WPOL = processing_level,
                     working_dir = output_dir,
                     eqinfo = eqinfo,
                     metadata = metadata,
@@ -276,6 +266,7 @@ def runwphase(
             except Exception as e:
                 if raise_errors:
                     raise
+                logger.exception(e)
                 wphase_output.add_warning("Error during post-processing. %s" % format_exc())
         wphase_output.WPInvProfile = profiler.html
 

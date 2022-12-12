@@ -6,12 +6,13 @@ corresponding environment variables (prefixed with WPHASE_)."""
 from __future__ import absolute_import
 
 import os
-import multiprocessing as mp
-from typing import List, Optional, Tuple
+from typing import List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseSettings, Field, validator
 
-# Set the number of threads used by OpenBLAS.
+# We seem to get *better* performance by disabling multithreading in openblas,
+# even when we don't use any other parallelism.  Not really sure on the cause,
+# but it's true; so here we are:
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 
 class WPhaseSettings(BaseSettings):
@@ -41,10 +42,13 @@ class WPhaseSettings(BaseSettings):
         return value
 
     ### Model parameters and quality thresholds
+    WAVEFORM_COMPONENTS: Optional[List[str]] = ["Z"]
+    """List of waveform components to use in inversion. If empty, all components will be used."""
+
     WORKER_COUNT: Optional[int] = None
     """Number of worker processes to use in parallel computations"""
 
-    BANDPASS_IMPLEMENTATION: str = "scipy"
+    BANDPASS_IMPLEMENTATION: Union[Literal["scipy"], Literal["fortran"]] = "scipy"
     """Name of the bandpass filter implementation to use (scipy or fortran)"""
 
     PROFILE: bool = False
@@ -92,15 +96,22 @@ class WPhaseSettings(BaseSettings):
     to this value."""
 
     MISFIT_TOL_SEQUENCE: List[float] = [300, 200, 100]
-    """Channels where the misfits (100*sqrt(sum(synthetic-observed)^2 /
-    sum(synthetic)^2)) are greater than the first element of this sequence will
-    be rejected. If any stations remain, then the inversion will be repeated
-    with these stations, and those with misfits greater than the second element
-    will be rejected, and so on."""
+    """List of thresholds used in outlier removal. Channels where the misfits
+    (100*sqrt(sum(synthetic-observed)^2 / sum(synthetic)^2)) are greater than
+    the first element of this sequence will be rejected. If any stations
+    remain, then the inversion will be repeated with these stations, and those
+    with misfits greater than the second element will be rejected, and so
+    on."""
+
+    OPTIMIZATION_TOLERANCE: float = 0.5
+    """`tol` parameter to pass to scipy.optimize.minimize when performing
+    outlier removal. Values above 1 produce bad results. Smaller values produce
+    better results but increase runtime."""
 
     MINIMUM_FITTING_CHANNELS: float = 10
     """Minimum number of well-fitting channels required for inversion to pass
     quality check"""
+
 
 
     ### Output products:

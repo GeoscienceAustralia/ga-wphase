@@ -1,4 +1,6 @@
-import numpy.testing
+import numpy.testing as nptest
+from pandas.testing import assert_series_equal
+import pandas as pd
 import pytest
 
 from wphase import runwphase
@@ -7,7 +9,7 @@ from wphase.psi.model import Event
 from validation_cases import cases, get_dataset, result_keys
 
 def assert_allclose(a, b):
-    numpy.testing.assert_allclose(a, b, rtol=0.01) # we tolerate a 1% error
+    nptest.assert_allclose(a, b, rtol=0.01) # we tolerate a 1% error
 
 @pytest.mark.parametrize("event", cases, ids=lambda c: c['id'])
 def test_validity_from_fixed_datasets(event, tmpdir):
@@ -33,14 +35,17 @@ def test_validity_from_fixed_datasets(event, tmpdir):
                   make_maps=True, make_plots=True,
                   raise_errors=True)
 
-    MT = r.MomentTensor
-    assert MT is not None
-    assert MT.drmagt == 'Mww'
+    mt = r.MomentTensor
+    assert mt is not None
+    assert mt.drmagt == 'Mww'
 
-    EXP = event['_expected_results']
-    assert_allclose([EXP[k] for k in result_keys],
-                    [getattr(MT, k) for k in result_keys])
-    ag = EXP.get("azimuthal_gap")
+    expected = event['_expected_results']
+    assert_series_equal(
+        pd.Series({k: getattr(mt, k) for k in result_keys}),
+        pd.Series({k: expected[k] for k in result_keys}),
+        rtol=1e-2,
+    )
+    ag = expected.get("azimuthal_gap")
     if ag is not None:
         assert r.QualityParams is not None
         assert_allclose(r.QualityParams.azimuthal_gap, ag)

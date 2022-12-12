@@ -10,8 +10,10 @@ class InversionError(Exception):
 
     :param str msg: The reason for termination
     :param WPhaseResult result: Partial result"""
-    def __init__(self, *args, result: Optional[WPhaseResult] = None):
-        super().__init__(*args)
+    def __init__(self, arg, *args, result: Optional[WPhaseResult] = None):
+        if isinstance(arg, InversionError):
+            arg = arg.args[0]
+        super().__init__(arg, *args)
         self.result = result
 
 class DeconvolutionError(Exception):

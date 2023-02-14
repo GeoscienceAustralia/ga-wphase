@@ -93,6 +93,11 @@ def build_dataframe(
         len(st_sel), len(stream)
     )
 
+    comps = settings.WAVEFORM_COMPONENTS
+    if comps:
+        st_sel = Stream([tr for tr in st_sel if tr.stats.component in comps])
+        logger.info('%d traces remaining after restricting to %s', len(st_sel), comps)
+
     # rotate the horizontal components to geographical north or east
     st_sel = rot_12_NE(st_sel, metadata)
 
@@ -106,11 +111,6 @@ def build_dataframe(
             "metadata": metadata.get(trace.id),
         }
     data = pd.DataFrame.from_records(map(trace_to_record, st_sel), index="id")
-
-    comps = settings.WAVEFORM_COMPONENTS
-    if comps:
-        data = data[data.component.isin(comps)].copy()
-        logger.info('%d traces remaining after restricting to %s', len(data), comps)
 
     def epicentral_distance(row):
         return locations2degrees(event.latitude, event.longitude, row.metadata.latitude, row.metadata.longitude)

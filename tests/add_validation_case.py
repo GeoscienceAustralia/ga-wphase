@@ -9,8 +9,9 @@ from typing import Optional
 
 from obspy import UTCDateTime
 
-from eatws_skip_client import SKIP, Event
+from eatws_skip_client import SKIP
 from wphase import runwphase
+from wphase.psi.model import Event
 from validation_cases import result_keys, DATA_DIR, add_case
 
 # get event data from production SKIP
@@ -20,14 +21,14 @@ skip = SKIP('https://skip.eatws.net',
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 
 def prepare_test_case(evid, inventory=None, waveforms=None):
-    event: Optional[Event] = skip.get_event(evid)
+    event = skip.get_event(evid)
     if not event:
         raise ValueError('%s not found in SKIP' % evid)
-    eqinfo = dict(
+    eqinfo = Event(
         id=event.id,
-        lat=event.latitude,
-        lon=event.longitude,
-        dep=event.depth_km,
+        latitude=event.latitude,
+        longitude=event.longitude,
+        depth=event.depth_km,
         time=UTCDateTime(event.event_time),
     )
     datadir = abspath(DATA_DIR)

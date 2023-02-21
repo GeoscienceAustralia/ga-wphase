@@ -1114,14 +1114,13 @@ def core_inversion(
     #_log("M", M)
 
     # construct the synthetics
-    # def build_synthetics(): return GFmatrix @ M
-    # syn = build_synthetics()
+    syn = GFmatrix @ M
 
     # from numpy.testing import assert_almost_equal
     # assert_almost_equal(np.sum((syn-observed_displacements)**2), residual)
     # assert_almost_equal(np.sum(syn**2), syn2)
     #syn = GFmatrix @ M
-    misfit = 100 * np.sqrt(residual / (obs @ obs))
+    misfit = 100 * np.sqrt(residual / (syn @ syn))
     # misfit = compute_misfit(residual, GFmatrix, M)
 
     logger.debug(

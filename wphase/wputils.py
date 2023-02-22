@@ -255,8 +255,9 @@ def post_process_wpinv(
     if output.OL1:
         traces = output.OL1.used_traces
         prelim = output.OL1.preliminary_calc_details
-        fname = os.path.join(working_dir, settings.PRELIM_FIT_PREFIX) + ".png"
-        plot_preliminary_fit(eqinfo, filename=fname, **prelim.dict())
+        if make_plots:
+            fname = os.path.join(working_dir, settings.PRELIM_FIT_PREFIX) + ".png"
+            plot_preliminary_fit(eqinfo, filename=fname, **prelim.dict())
     else:
         logger.warning("Could not find preliminary calculation details in result.")
 
@@ -299,6 +300,14 @@ def post_process_wpinv(
         except Exception:
             output.add_warning(
                 "Failed to create beachball for OL3. {}".format(format_exc())
+            )
+
+    if make_plots and output.new is not None:
+        try:
+            plot_and_save_beachball(output.new.moment_tensor, working_dir, OL="New")
+        except Exception:
+            output.add_warning(
+                "Failed to create beachball for OLNew. {}".format(format_exc())
             )
 
     if isinstance(mtResult, model.OL3Result):

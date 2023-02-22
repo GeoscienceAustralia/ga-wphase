@@ -39,6 +39,8 @@ def prepare_test_case(evid, inventory=None, waveforms=None):
         save_inventory=join(datadir, '%s.xml' % evid),
         inventory=inventory,
         waveforms=waveforms,
+        make_maps=False,
+        make_plots=False,
     )
     MT = result.MomentTensor
     case = dict(
@@ -53,9 +55,9 @@ def prepare_test_case(evid, inventory=None, waveforms=None):
         case["_expected_results"]["azimuthal_gap"] = result.QualityParams.azimuthal_gap
     print(json.dumps(case, indent=4))
     add_case(case)
-    print("This test case has been added to validation_cases.json and test-datasets/.")
+    print("This test case has been added to test-datasets/.")
     print("To create a new release tarball: "
-          "tar czvf ga-wphase-test-datasets.tar.gz test-datasets/ validation_cases.json")
+          "tar czvf ga-wphase-test-datasets.tar.gz test-datasets/")
 
 if __name__ == '__main__':
     prepare_test_case(*sys.argv[1:])

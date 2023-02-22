@@ -65,8 +65,11 @@ def dump_case(case):
     return case
 
 def _load_cases():
-    with open(join(TESTS_DIR, "validation_cases.json")) as fh:
-        return [parse_case(x) for x in json.load(fh)]
+    return [
+        parse_case(json.load(open(join(TESTS_DIR, DATA_DIR, fn))))
+        for fn in os.listdir(join(TESTS_DIR, DATA_DIR))
+        if fn.endswith(".json")
+    ]
 
 try:
     cases = _load_cases()
@@ -76,5 +79,6 @@ except FileNotFoundError:
 
 def add_case(case):
     cases.append(case)
-    with open(join(TESTS_DIR, "validation_cases.json"), "w") as fh:
-        json.dump([dump_case(x) for x in cases], fh, indent=4)
+    jpath = join(TESTS_DIR, DATA_DIR, "{}.json".format(case["id"]))
+    with open(jpath, "w") as fh:
+        json.dump(dump_case(case), fh, indent=4)

@@ -1,5 +1,4 @@
 """Methods to convert results to seiscomp formats."""
-from __future__ import absolute_import
 from contextlib import contextmanager
 import logging
 

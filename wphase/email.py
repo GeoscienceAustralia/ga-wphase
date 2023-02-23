@@ -1,7 +1,4 @@
 """Send an email via Amazon SES or SMTP."""
-from __future__ import absolute_import, print_function
-
-
 from email.mime.text import MIMEText
 from email.utils import formatdate
 import logging

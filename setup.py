@@ -47,7 +47,6 @@ setup(
     ],
     python_requires = '>=3.6.0',
     install_requires = [
-        'future',
         'h5py',
         'matplotlib', # obspy imports this anyway, so we don't relegate it to [plotting]
         'numpy>=1.9.0',

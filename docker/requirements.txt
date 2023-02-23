@@ -22,10 +22,6 @@ cycler==0.10.0
     # via matplotlib
 decorator==5.0.9
     # via obspy
-future==0.18.2
-    # via
-    #   Wphase (setup.py)
-    #   obspy
 greenlet==1.1.0
     # via sqlalchemy
 h5py==3.2.1

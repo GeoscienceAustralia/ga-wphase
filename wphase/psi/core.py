@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """Core implementation of the W-Phase inversion."""
-from __future__ import absolute_import, print_function
-
 import logging
 from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor

@@ -1,17 +1,13 @@
 ''' This module contains useful fuctions to handle seismic data
     with obspy
 '''
-from __future__ import absolute_import, print_function
+import logging
 from typing import Iterable, List, Literal, Mapping, Tuple, Union
 
-from future import standard_library
+import numpy as np
 from obspy import Stream
-standard_library.install_aliases()
 
 from wphase.psi.model import ChannelMetadata
-
-import logging
-import numpy as np
 
 logger = logging.getLogger(__name__)
 

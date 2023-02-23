@@ -1,5 +1,4 @@
 """Butterworth bandpass filtering"""
-from __future__ import absolute_import
 from typing import Literal, Union
 
 import numpy as np

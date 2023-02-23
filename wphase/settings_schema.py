@@ -3,8 +3,6 @@
 """Configuration settings for :mod:`wphase`. These can be adjusted by setting the
 corresponding environment variables (prefixed with WPHASE_)."""
 
-from __future__ import absolute_import
-
 import os
 from typing import List, Literal, Optional, Tuple, Union
 

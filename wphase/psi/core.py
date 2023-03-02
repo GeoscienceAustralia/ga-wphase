@@ -749,7 +749,7 @@ def preliminary_magnitude(
         logger.warning("Preliminary magnitude %.2f is less than %.1f. "
                        "Setting it to %.1f and continuing",
                        pre_wp_mag, min_mag, min_mag)
-        pre_wp_mag = 6.5
+        pre_wp_mag = min_mag
 
     # Scalar moment in dyne * cm:
     M0 = 10 ** (1.5 * pre_wp_mag + 16.1)

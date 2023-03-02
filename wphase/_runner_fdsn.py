@@ -15,7 +15,7 @@ from wphase import settings
 from wphase.data_acquisition import build_metadata_dict, get_waveforms
 from wphase.psi.core import wpinv
 from wphase.psi.exceptions import InversionError
-from wphase.psi.model import Event, WPhaseResult
+from wphase.psi.model import Event, OL1Result, WPhaseResult
 from wphase.wputils import (NoProfiler, WPInvProfiler, post_process_wpinv)
 
 logger = logging.getLogger(__name__)
@@ -166,6 +166,7 @@ def runwphase(
         raise_errors=False,
         save_waveforms=None,
         save_inventory=None,
+        ol1: Optional[OL1Result] = None,
         **kwargs) -> WPhaseResult:
 
     """
@@ -244,7 +245,8 @@ def runwphase(
                         greens_functions_dir,
                         ptimes=ptimes,
                         processes = n_workers_in_pool,
-                        OL = processing_level)
+                        OL = processing_level,
+                        ol1=ol1)
             except InversionError as e:
                 if e.result is not None:
                     wphase_output = e.result

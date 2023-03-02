@@ -542,6 +542,7 @@ def wpinv(
     OL: int = 1,
     processes: Optional[int] = None,
     do_new_calculation: bool = False,
+    ol1: Optional[OL1Result] = None,
 ):
     """
     This function is the main function that will compute the inversion. For
@@ -561,6 +562,10 @@ def wpinv(
          magnitude, 2 perform an inversion using PDE location and 3
          uses an optimized centroid's location.
 
+    :param OL1Result ol1:
+        If provided, the preliminary magnitude calculation is skipped, with the
+        provided data used instead.
+
     :return WPhaseResult:
     """
     # Deal with extremly shallow preliminary hypocenters by clamping to 10km
@@ -572,9 +577,12 @@ def wpinv(
     result = WPhaseResult(Event=event, available_traces=list(data.index))
     timer = SimpleTimer()
 
-    with timer:
-        computeOL1(data, result=result)
-    result.timing.ol1 = timer.duration
+    if ol1 is None:
+        with timer:
+            computeOL1(data, result=result)
+        result.timing.ol1 = timer.duration
+    else:
+        result.OL1 = ol1
 
     if OL == 1:
         return result

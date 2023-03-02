@@ -118,8 +118,22 @@ def plot_grid_search(
     fig.text(.5, -.05, grid_legend, horizontalalignment='center')
     fig.savefig(filename, bbox_inches='tight')
 
-def plot_station_coverage(location, trids, lats, lons, mt=None, filename=None, fig=None):
-    """Plot a map showing the stations used in a W-Phase solution."""
+def plot_station_coverage(location, stations, mt=None, filename=None, fig=None):
+    """Plot a map showing the stations used in a W-Phase solution.
+    
+    `station` should be a dataframe with columns:
+
+    - lat
+    - lon
+    - marker (optional)
+    - color (optional)
+    - label (optional)"""
+
+    stations = stations.copy()
+    if "marker" not in stations.columns:
+        stations["marker"] = "o"
+    if "color" not in stations.columns:
+        stations["color"] = "blue"
 
     (elat, elon) = location
     if not fig:
@@ -133,18 +147,20 @@ def plot_station_coverage(location, trids, lats, lons, mt=None, filename=None, f
     ax.coastlines(resolution='110m')
     land = NaturalEarthFeature('physical', 'land', '110m')
     ocean = NaturalEarthFeature('physical', 'ocean', '110m')
-    ax.add_feature(land, facecolor='#FF9900')
-    ax.add_feature(ocean, facecolor='aqua')
+    ax.add_feature(land, facecolor='#f3f3f3')
+    ax.add_feature(ocean, facecolor='#d0d0d0')
     ax.gridlines(crs=coords, draw_labels=False,
                  color='grey', linestyle=(0, [5,5]), linewidth=0.4)
 
-    ax.scatter(lons, lats, transform=coords,
-               s=60, c='blue', marker='o', edgecolors='none', zorder=10)
+    for (marker, color), data in stations.groupby(["marker", "color"]):
+        ax.scatter(data.lon, data.lat, transform=coords,
+                   s=60, c=color, marker=marker, zorder=10)
 
     latlon_crs = PlateCarree()
-    for lon, lat, trid in zip(lons, lats, trids):
-        xy = ax.projection.transform_point(lon, lat, src_crs=latlon_crs)
-        ax.annotate(trid, xy)
+    if "label" in stations.columns:
+        for row in stations.itertuples():
+            xy = ax.projection.transform_point(row.lon, row.lat, src_crs=latlon_crs)
+            ax.annotate(row.label, xy)
 
     from warnings import warn
     if mt is not None:

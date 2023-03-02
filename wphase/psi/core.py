@@ -569,7 +569,7 @@ def wpinv(
 
     data = build_dataframe(stream=stream, event=event, metadata=metadata, ptimes=ptimes)
     greens = GreensFunctions(gfdir)
-    result = WPhaseResult(Event=event)
+    result = WPhaseResult(Event=event, available_traces=list(data.index))
     timer = SimpleTimer()
 
     with timer:

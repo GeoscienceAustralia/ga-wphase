@@ -2,6 +2,7 @@
 import os
 import logging
 import numpy as np
+import pandas as pd
 from typing import Optional
 from collections import defaultdict
 from traceback import format_exc
@@ -358,21 +359,37 @@ def post_process_wpinv(
                 filename=gridSearchPrefix
             )
 
-    if traces and make_maps:
+    all_traces = output.available_traces
+    if all_traces:
         try:
             # Make a plot of the station distribution
-            lats = [metadata[trid].latitude for trid in traces]
-            lons = [metadata[trid].longitude for trid in traces]
-            stationDistPrefix = os.path.join(
-                working_dir,
-                settings.STATION_DISTRIBUTION_PREFIX)
+            df = pd.DataFrame.from_records(
+                {
+                    "id": id,
+                    "lat": metadata[id].latitude,
+                    "lon": metadata[id].longitude,
+                    "marker": "x",
+                    "color": "red",
+                }
+                for id in all_traces
+            )
+
+            if output.OL1:
+                inol1 = df.id.isin(set(output.OL1.used_traces))
+                df.loc[inol1, "color"] = "orange"
+
+            if traces:
+                final = df.id.isin(set(traces))
+                df.loc[final, "marker"] = "^"
+                df.loc[final, "color"] = "blue"
+
+            stationDistPrefix = os.path.join(working_dir, settings.STATION_DISTRIBUTION_PREFIX)
             plot_station_coverage(
                 (eqinfo.latitude, eqinfo.longitude),
-                traces,
-                lats,
-                lons,
+                df,
                 mt=MT,
-                filename=stationDistPrefix + '.png')
+                filename=stationDistPrefix + '.png',
+            )
         except Exception:
             output.add_warning("Failed to create station distribution plot. {}".format(format_exc()))
 

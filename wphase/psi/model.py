@@ -216,6 +216,7 @@ class WPhaseResult(Data):
     OL2: Optional[OL2Result] = None
     OL3: Optional[OL3Result] = None
     new: Optional[OL3Result] = None
+    available_traces: List[str] = []
     QualityParams: Optional[Quality] = None
     MomentTensor: Optional[AntelopeMomentTensor] = None  # "Preferred solution"
     Centroid: Optional[CentroidLocation] = None

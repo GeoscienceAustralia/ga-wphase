@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
 
-import json
 import logging
-import os
 import sys
-from os.path import join, abspath
-from typing import Optional
 
 from obspy import UTCDateTime
 
 from eatws_skip_client import SKIP
 from wphase import runwphase
 from wphase.psi.model import Event
-from validation_cases import result_keys, DATA_DIR, add_case
+from validation_cases import ExpectedMT, ValidationCase, result_keys, DATA_DIR, add_case
 
 # get event data from production SKIP
 skip = SKIP('https://skip.eatws.net',
@@ -31,29 +27,18 @@ def prepare_test_case(evid, inventory=None, waveforms=None):
         depth=event.depth_km,
         time=UTCDateTime(event.event_time),
     )
-    datadir = abspath(DATA_DIR)
     result = runwphase(
         server='IRIS',
         eqinfo=eqinfo,
-        save_waveforms=join(datadir, '%s.mseed' % evid),
-        save_inventory=join(datadir, '%s.xml' % evid),
+        save_waveforms=DATA_DIR / f"{evid}.mseed",
+        save_inventory=DATA_DIR / f"{evid}.xml",
         inventory=inventory,
         waveforms=waveforms,
         make_maps=False,
         make_plots=False,
     )
-    MT = result.MomentTensor
-    case = dict(
-        id=event.id,
-        lat=event.latitude,
-        lon=event.longitude,
-        dep=event.depth_km,
-        time=event.event_time,
-        _expected_results={k: getattr(MT, k) for k in result_keys},
-    )
-    if result.QualityParams is not None:
-        case["_expected_results"]["azimuthal_gap"] = result.QualityParams.azimuthal_gap
-    print(json.dumps(case, indent=4))
+    case = ValidationCase.from_result(result)
+    print(case.json(indent=4))
     add_case(case)
     print("This test case has been added to test-datasets/.")
     print("To create a new release tarball: "

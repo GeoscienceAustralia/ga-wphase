@@ -1,44 +1,23 @@
-import json
 import logging
 import tarfile
-import os
-from os.path import join, exists, dirname
+from pathlib import Path
+from typing import Optional
 from urllib.request import urlretrieve
-from tempfile import NamedTemporaryFile
 
 import obspy
-from obspy.core import UTCDateTime
+import pandas as pd
+
+from wphase.psi.model import AntelopeMomentTensor, Data, Event, WPhaseResult
 
 logger = logging.getLogger("wphase.tests")
 
-DATASETS_URL = 'https://github.com/GeoscienceAustralia/ga-wphase/releases/download/v0.3/ga-wphase-test-datasets.tar.gz'
-DATA_DIR = 'test-datasets'
-TESTS_DIR = dirname(__file__)
-
-def fetch_datasets():
-    """Download and extract the test datasets."""
-    tarball_path = join(TESTS_DIR, 'dl.tar.gz')
-    logger.warning("Downloading test datasets from %s", DATASETS_URL)
-    urlretrieve(DATASETS_URL, tarball_path)
-    with tarfile.open(tarball_path, "r:gz") as tarball:
-        logger.warning("Extracting test datasets to %s", TESTS_DIR)
-        tarball.extractall(path=TESTS_DIR)
-    os.remove(tarball_path)
+DATASETS_URL = 'https://github.com/GeoscienceAustralia/ga-wphase/releases/download/v0.3.1/ga-wphase-test-datasets.tar.gz'
+TESTS_DIR = Path(__file__).parent
+DATA_DIR = TESTS_DIR / "test-datasets"
 
 
-def get_dataset(eqinfo):
-    """Retrieve a test dataset, either from the local cache directory or from
-    the web."""
-    evid = eqinfo["id"]
-    wfpath = join(TESTS_DIR, DATA_DIR, "{}.mseed".format(evid))
-    invpath = join(TESTS_DIR, DATA_DIR, "{}.xml".format(evid))
-    if not (exists(wfpath) and exists(invpath)):
-        fetch_datasets()
-    if not (exists(wfpath) and exists(invpath)):
-        raise Exception("Dataset {evid} missing even after running fetch_datasets!")
-    inventory = obspy.read_inventory(invpath)
-    waveforms = obspy.read(wfpath)
-    return inventory, waveforms
+class TestEvent(Event):
+    id: str # to make this not null
 
 
 result_keys = [
@@ -53,32 +32,99 @@ result_keys = [
     "tmrp",
     "tmpp",
 ]
+class ExpectedMT(AntelopeMomentTensor):
+    """The expected results we check don't include all of the required fields
+    in AntelopeMomentTensor, so we have this subclass to allow loading the
+    partial records."""
+    scm: Optional[float] = None
+    drmagt: Optional[float] = None
+    str1: Optional[float] = None
+    dip1: Optional[float] = None
+    rake1: Optional[float] = None
+    str2: Optional[float] = None
+    dip2: Optional[float] = None
+    rake2: Optional[float] = None
+    auth: Optional[str] = None
 
-def parse_case(case):
-    case['time'] = UTCDateTime(case['time'])
-    return case
+    @staticmethod
+    def from_result(result: WPhaseResult):
+        mt = result.MomentTensor
+        assert mt is not None
+        return ExpectedMT(
+            drlat=mt.drlat,
+            drlon=mt.drlon,
+            drmag=mt.drmag,
+            drdepth=mt.drdepth,
+            tmtp=mt.tmtp,
+            tmtt=mt.tmtt,
+            tmrt=mt.tmrt,
+            tmrr=mt.tmrr,
+            tmrp=mt.tmrp,
+            tmpp=mt.tmpp,
+        )
 
-def dump_case(case):
-    case = case.copy()
-    if not isinstance(case['time'], str):
-        case['time'] = case['time'].strftime("%Y-%m-%dT%H:%M:%SZ")
-    return case
+
+def mt_as_series(mt: AntelopeMomentTensor):
+    return pd.Series({k: getattr(mt, k) for k in result_keys})
+
+
+class ValidationCase(Data):
+    Event: TestEvent
+    MomentTensor: ExpectedMT
+    azimuthal_gap: Optional[float] = None
+
+    def get_dataset(self):
+        """Retrieve a test dataset, either from the local cache directory or from
+        the web."""
+        evid = self.Event.id
+        wfpath = DATA_DIR / f"{evid}.mseed"
+        invpath = DATA_DIR / f"{evid}.xml"
+        if not (wfpath.is_file() and invpath.is_file()):
+            fetch_datasets()
+        if not (wfpath.is_file() and invpath.is_file()):
+            raise Exception(f"Dataset {evid} missing even after running fetch_datasets!")
+        inventory = obspy.read_inventory(invpath)
+        waveforms = obspy.read(wfpath)
+        return inventory, waveforms
+
+    @staticmethod
+    def from_result(result: WPhaseResult):
+        e = result.Event
+        return ValidationCase(
+            Event=TestEvent(**dict(e)),
+            MomentTensor=ExpectedMT.from_result(result),
+            azimuthal_gap=result.QualityParams and result.QualityParams.azimuthal_gap or None,
+        )
+
+def fetch_datasets():
+    """Download and extract the test datasets."""
+    tarball_path = TESTS_DIR / "dl.tar.gz"
+    logger.warning("Downloading test datasets from %s", DATASETS_URL)
+    urlretrieve(DATASETS_URL, tarball_path)
+    with tarfile.open(tarball_path, "r:gz") as tarball:
+        logger.warning("Extracting test datasets to %s", TESTS_DIR)
+        tarball.extractall(path=TESTS_DIR)
+    tarball_path.unlink()
+
+
+class CasesNotFound(Exception):
+    pass
+
 
 def _load_cases():
-    return [
-        parse_case(json.load(open(join(TESTS_DIR, DATA_DIR, fn))))
-        for fn in os.listdir(join(TESTS_DIR, DATA_DIR))
-        if fn.endswith(".json")
-    ]
+    jfiles = [file for file in DATA_DIR.iterdir() if file.suffix == ".json"]
+    if not jfiles:
+        raise CasesNotFound()
+    return [ValidationCase.parse_file(file) for file in jfiles]
+
 
 try:
     cases = _load_cases()
-except FileNotFoundError:
+except (FileNotFoundError, CasesNotFound):
     fetch_datasets()
     cases = _load_cases()
 
-def add_case(case):
+
+def add_case(case: ValidationCase):
     cases.append(case)
-    jpath = join(TESTS_DIR, DATA_DIR, "{}.json".format(case["id"]))
-    with open(jpath, "w") as fh:
-        json.dump(dump_case(case), fh, indent=4)
+    (DATA_DIR / case.id).write_text(case.json(indent=4))

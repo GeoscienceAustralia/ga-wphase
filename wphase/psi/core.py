@@ -1211,9 +1211,9 @@ def minimize_misfit(inputs: Sequence[Mapping], parameters: Mapping[str, Any], pr
     :param processes: number of parallel processes to use.
     :return: A tuple (index_of_minimizer, moment_tensor, misfit, results list)."""
     worker = partial(core_inversion_wrapper, fixed_kwargs=parameters)
-    # with ProcessPoolExecutor(max_workers=processes) as pool:
-    #     results = list(pool.map(worker, inputs))
-    results = list(map(worker, inputs))
+    with ProcessPoolExecutor(max_workers=processes) as pool:
+        results = list(pool.map(worker, inputs))
+    #results = list(map(worker, inputs))
     misfits = np.array([x[1] for x in results])
     i_min = misfits.argmin()
     return i_min, results[i_min][0], results[i_min][1], results

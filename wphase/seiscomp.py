@@ -84,9 +84,9 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
         A dictionary with keys focalMechanism, derivedOrigin, momentMagnitude
         (mapped to seiscomp3.DataModel objects), and optionally notifiers
         (mapped to a list of Notifiers)."""
-    mt = item.MomentTensor
+    mtresult = item.MomentTensor
     preferredOL = item.OL3 or item.OL2
-    if not (mt and preferredOL):
+    if not (mtresult and preferredOL):
         raise ValueError("W-Phase result contains no MomentTensor to convert/send!")
 
     # get current time in UTC
@@ -96,7 +96,7 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     ci = DM.CreationInfo()
     ci.setCreationTime(time)
     ci.setAgencyID(agency)
-    ci.setAuthor(charstar(mt.auth))
+    ci.setAuthor(charstar(mtresult.auth))
 
     originTime = DM.TimeQuantity(datetime_to_seiscomp(item.Event.time))
 
@@ -104,21 +104,21 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     derivedOrigin = DM.Origin.Create()
     derivedOrigin.setCreationInfo(ci)
     derivedOrigin.setTime(originTime)
-    derivedOrigin.setLatitude(DM.RealQuantity(mt.drlat))
-    derivedOrigin.setLongitude(DM.RealQuantity(mt.drlon))
-    derivedOrigin.setDepth(DM.RealQuantity(mt.drdepth))
+    derivedOrigin.setLatitude(DM.RealQuantity(mtresult.drlat))
+    derivedOrigin.setLongitude(DM.RealQuantity(mtresult.drlon))
+    derivedOrigin.setDepth(DM.RealQuantity(mtresult.drdepth))
     derivedOrigin.setEvaluationMode(DM.AUTOMATIC)
     derivedOrigin.setEvaluationStatus(DM.CONFIRMED)
 
     originQuality = DM.OriginQuality()
     if item.QualityParams is not None:
         try:
-            originQuality.setUsedPhaseCount(item.QualityParams.number_of_channels)
+            originQuality.setUsedPhaseCount(int(item.QualityParams.number_of_channels))
         except Exception:
             pass
 
         try:
-            originQuality.setUsedStationCount(item.QualityParams.number_of_stations)
+            originQuality.setUsedStationCount(int(item.QualityParams.number_of_stations))
         except Exception:
             pass
 
@@ -132,12 +132,12 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     # fill magnitude
     try:
         mag = DM.Magnitude.Create()
-        mag.setMagnitude(DM.RealQuantity(mt.drmag))
+        mag.setMagnitude(DM.RealQuantity(mtresult.drmag))
         mag.setCreationInfo(ci)
         mag.setOriginID(derivedOrigin.publicID())
-        mag.setType(charstar(mt.drmagt))
+        mag.setType(charstar(mtresult.drmagt))
         if item.QualityParams:
-            mag.setStationCount(item.QualityParams.number_of_stations)
+            mag.setStationCount(int(item.QualityParams.number_of_stations))
         mag.setMethodID("wphase")
     except Exception as e:
         logger.error("Failed to configure magnitude: {}".format(e))
@@ -147,13 +147,13 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     np1 = DM.NodalPlane()
     np2 = DM.NodalPlane()
 
-    np1.setStrike(DM.RealQuantity(mt.str1))
-    np1.setDip(DM.RealQuantity(mt.dip1))
-    np1.setRake(DM.RealQuantity(mt.rake1))
+    np1.setStrike(DM.RealQuantity(mtresult.str1))
+    np1.setDip(DM.RealQuantity(mtresult.dip1))
+    np1.setRake(DM.RealQuantity(mtresult.rake1))
 
-    np2.setStrike(DM.RealQuantity(mt.str2))
-    np2.setDip(DM.RealQuantity(mt.dip2))
-    np2.setRake(DM.RealQuantity(mt.rake2))
+    np2.setStrike(DM.RealQuantity(mtresult.str2))
+    np2.setDip(DM.RealQuantity(mtresult.dip2))
+    np2.setRake(DM.RealQuantity(mtresult.rake2))
 
     nodalPlanes.setNodalPlane1(np1)
     nodalPlanes.setNodalPlane2(np2)
@@ -167,7 +167,7 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     misfit = preferredOL.misfit / 100.0
     fm.setMisfit(misfit)
     if item.QualityParams:
-        fm.setStationPolarityCount(item.QualityParams.number_of_channels)
+        fm.setStationPolarityCount(int(item.QualityParams.number_of_channels))
         try:
             fm.setAzimuthalGap(item.QualityParams.azimuthal_gap)
         except Exception:
@@ -179,32 +179,32 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     tensor = DM.Tensor()
 
     try:
-        tensor.setMtp(DM.RealQuantity(fm.tmtp))
+        tensor.setMtp(DM.RealQuantity(mtresult.tmtp))
     except Exception:
         pass
 
     try:
-        tensor.setMtt(DM.RealQuantity(fm.tmtt))
+        tensor.setMtt(DM.RealQuantity(mtresult.tmtt))
     except Exception:
         pass
 
     try:
-        tensor.setMrt(DM.RealQuantity(fm.tmrt))
+        tensor.setMrt(DM.RealQuantity(mtresult.tmrt))
     except Exception:
         pass
 
     try:
-        tensor.setMrr(DM.RealQuantity(fm.tmrr))
+        tensor.setMrr(DM.RealQuantity(mtresult.tmrr))
     except Exception:
         pass
 
     try:
-        tensor.setMrp(DM.RealQuantity(fm.tmrp))
+        tensor.setMrp(DM.RealQuantity(mtresult.tmrp))
     except Exception:
         pass
 
     try:
-        tensor.setMpp(DM.RealQuantity(fm.tmpp))
+        tensor.setMpp(DM.RealQuantity(mtresult.tmpp))
     except Exception:
         pass
 
@@ -216,12 +216,12 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     mt.setMethodID("wphase")
 
     try:
-        mt.setClvd(fm.clvd)
+        mt.setClvd(mtresult.clvd)
     except Exception:
         pass
 
     try:
-        mt.setDoubleCouple(fm.dc)
+        mt.setDoubleCouple(mtresult.dc)
     except Exception:
         pass
 

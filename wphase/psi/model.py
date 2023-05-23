@@ -95,8 +95,8 @@ class Quality(Data):
     """Basic quality parameters of a W-Phase solution."""
 
     azimuthal_gap: float
-    number_of_stations: float
-    number_of_channels: float
+    number_of_stations: int
+    number_of_channels: int
 
 
 class Event(Data):

@@ -47,7 +47,7 @@ class OL1Result(Data):
     nstations: int
     used_traces: List[str]
 
-    preliminary_calc_details: dict = Field(exclude=True)
+    preliminary_calc_details: Optional[dict] = Field(exclude=True)
 
 
 class OL2Result(Data):
@@ -71,9 +71,9 @@ class OL2Result(Data):
     used_traces: List[str]
     trace_lengths: OrderedDict[str, int]
 
-    moment_tensor: np.ndarray = Field(exclude=True)
-    observed_displacements: np.ndarray = Field(exclude=True)
-    synthetic_displacements: np.ndarray = Field(exclude=True)
+    moment_tensor: Optional[np.ndarray] = Field(exclude=True)
+    observed_displacements: Optional[np.ndarray] = Field(exclude=True)
+    synthetic_displacements: Optional[np.ndarray] = Field(exclude=True)
 
 
 class OL3Result(OL2Result):
@@ -82,11 +82,11 @@ class OL3Result(OL2Result):
 
     centroid: Tuple[float, float, float]
 
-    grid_search_candidates: List[Tuple[float, float, float]] = Field(exclude=True)
+    grid_search_candidates: Optional[List[Tuple[float, float, float]]] = Field(exclude=True)
     """List of inputs to core_inversion that were used in the grid search.
     Elements are (lat, lon, depths) tuples."""
 
-    grid_search_results: List[Tuple[np.ndarray, float]] = Field(exclude=True)
+    grid_search_results: Optional[List[Tuple[np.ndarray, float]]] = Field(exclude=True)
     """List of outputs from the inversion for each point in the grid search.
     elements are (MT, misfit) tuples."""
 

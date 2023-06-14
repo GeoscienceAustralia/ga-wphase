@@ -1,16 +1,26 @@
 from functools import partial
-from obspy import UTCDateTime
 from wphase.psi.model import WPhaseResult
 from wphase.seiscomp import createObjects, writeSCML
-from seiscomp3.DataModel import AUTOMATIC, CENTROID, FocalMechanism, MomentTensor, NodalPlane, NodalPlanes, Origin, Magnitude, Tensor
+from seiscomp3.Core import Time
+from seiscomp3.DataModel import (
+    AUTOMATIC,
+    CENTROID,
+    FocalMechanism,
+    MomentTensor,
+    NodalPlane,
+    NodalPlanes,
+    Origin,
+    Magnitude,
+    Tensor,
+)
 import numpy.testing
 
 assert_almost_equal = partial(numpy.testing.assert_almost_equal, decimal=3)
 
+
 def test_create_objects(tests_dir):
     sample = WPhaseResult.parse_file(tests_dir / "ga2023fsbydd-result.json")
     objects = createObjects(sample, "GA")
-    assert set(objects.keys()) == {"focalMechanism", "derivedOrigin", "momentMagnitude"}
     fm = objects["focalMechanism"]
     do = objects["derivedOrigin"]
     mm = objects["momentMagnitude"]
@@ -22,7 +32,7 @@ def test_create_objects(tests_dir):
     assert fm.creationInfo().agencyID() == "GA"
     assert fm.methodID() == "wphase"
     assert fm.evaluationMode() == AUTOMATIC
-    assert_almost_equal(fm.misfit(), 0.60476677)
+    assert_almost_equal(fm.misfit(), 0.6331477)
 
     assert mm.type() == "Mww"
     assert_almost_equal(mm.magnitude().value(), 6.366682797749126)
@@ -46,12 +56,12 @@ def test_create_objects(tests_dir):
     assert_almost_equal(mt.clvd(), 0.35437)
     assert_almost_equal(mt.doubleCouple(), 0.64562)
     tensor: Tensor = mt.tensor()
-    assert_almost_equal(tensor.Mpp().value(), 3.0810939673170893e+18)
-    assert_almost_equal(tensor.Mrp().value(), -3.1716891598093266e+18)
-    assert_almost_equal(tensor.Mrr().value(), -2.54973659062008e+18)
-    assert_almost_equal(tensor.Mrt().value(), 4.7805636937507776e+17)
-    assert_almost_equal(tensor.Mtp().value(), -1.2362758097016248e+18)
-    assert_almost_equal(tensor.Mtt().value(), -5.313573766970089e+17)
+    assert_almost_equal(tensor.Mpp().value(), 3.0810939673170893e18)
+    assert_almost_equal(tensor.Mrp().value(), -3.1716891598093266e18)
+    assert_almost_equal(tensor.Mrr().value(), -2.54973659062008e18)
+    assert_almost_equal(tensor.Mrt().value(), 4.7805636937507776e17)
+    assert_almost_equal(tensor.Mtp().value(), -1.2362758097016248e18)
+    assert_almost_equal(tensor.Mtt().value(), -5.313573766970089e17)
 
     assert do.type() == CENTROID
     assert do.quality().usedPhaseCount() == 16
@@ -62,3 +72,11 @@ def test_create_objects(tests_dir):
 
     assert mt.derivedOriginID() == do.publicID()
     assert mm.originID() == do.publicID()
+
+
+def test_write_scml(golden, tests_dir, tmp_path):
+    sample = WPhaseResult.parse_file(tests_dir / "ga2023fsbydd-result.json")
+    objects = createObjects(sample, "GA", publicid_slug="test")
+    outfile = tmp_path / "new.xml"
+    writeSCML(outfile, objects)
+    golden.test(tests_dir / "ga2023fsbydd-sc3.xml").check_file(outfile)

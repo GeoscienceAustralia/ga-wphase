@@ -45,7 +45,7 @@ setup(
             'wphase/psi/ttimes_subrout.f',
             'wphase/psi/libtau.f'])
     ],
-    python_requires = '>=3.6.0',
+    python_requires = '>=3.7.0',
     install_requires = [
         'future',
         'h5py',

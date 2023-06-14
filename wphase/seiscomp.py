@@ -1,7 +1,10 @@
 """Methods to convert results to seiscomp formats."""
-from __future__ import absolute_import
+from __future__ import absolute_import, annotations
 from contextlib import contextmanager
+from dataclasses import dataclass
 import logging
+from pathlib import Path
+from typing import List, Optional, Union
 
 
 from obspy.core import UTCDateTime
@@ -59,7 +62,7 @@ def datetime_to_seiscomp(dt):
 
 
 @contextmanager
-def SCNotifier():
+def SCNotifierEnabled():
     """seiscomp entities created (and associated with each other) inside this
     context manager will be logged to the Notifier."""
     wasEnabled = DM.Notifier.IsEnabled()
@@ -70,7 +73,26 @@ def SCNotifier():
         DM.Notifier.SetEnabled(wasEnabled)
 
 
-def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
+try:
+    from typing import TypedDict
+except ImportError:
+    pass
+else:
+
+    class SeiscompResults(TypedDict):
+        momentMagnitude: DM.Magnitude
+        derivedOrigin: DM.Origin
+        focalMechanism: DM.FocalMechanism
+        notifiers: Optional[List[DM.Notifier]]
+
+
+def createObjects(
+    item: WPhaseResult,
+    agency,
+    evid=None,
+    with_notifiers=False,
+    publicid_slug: Optional[str] = None,
+) -> SeiscompResults:
     """Convert a WPhaseResult to seiscomp3.DataModel objects, optionally sending
     Notifier events to messaging.
 
@@ -79,6 +101,10 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     :param bool with_notifiers:
         If true, seiscomp3.DataModel.Notifier instances will be created linking
         the FocalMechanism and derived Origin to the triggering event.
+    :param str publicid_slug:
+        If provided, publicIDs are built from templates using this string
+        rather than dynamically based on time. (Used for deterministic outputs
+        in tests.)
     :rtype: dict
     :return:
         A dictionary with keys focalMechanism, derivedOrigin, momentMagnitude
@@ -105,6 +131,8 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
 
     # fill derived origin
     derivedOrigin = DM.Origin.Create()
+    if publicid_slug is not None:
+        derivedOrigin.setPublicID(f"Origin/{publicid_slug}")
     derivedOrigin.setCreationInfo(ci)
     derivedOrigin.setTime(originTime)
     derivedOrigin.setLatitude(DM.RealQuantity(mtresult.drlat))
@@ -121,7 +149,9 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
             pass
 
         try:
-            originQuality.setUsedStationCount(int(item.QualityParams.number_of_stations))
+            originQuality.setUsedStationCount(
+                int(item.QualityParams.number_of_stations)
+            )
         except Exception:
             pass
 
@@ -133,8 +163,10 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
         derivedOrigin.setType(DM.HYPOCENTER)
 
     # fill magnitude
+    mag = DM.Magnitude.Create()
+    if publicid_slug is not None:
+        mag.setPublicID(f"Magnitude/{publicid_slug}")
     try:
-        mag = DM.Magnitude.Create()
         mag.setMagnitude(DM.RealQuantity(mtresult.drmag))
         mag.setCreationInfo(ci)
         mag.setOriginID(derivedOrigin.publicID())
@@ -162,6 +194,8 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     nodalPlanes.setNodalPlane2(np2)
 
     fm = DM.FocalMechanism.Create()
+    if publicid_slug is not None:
+        fm.setPublicID(f"FocalMechanism/{publicid_slug}")
     fm.setNodalPlanes(nodalPlanes)
     fm.setCreationInfo(ci)
     fm.setMethodID("wphase")
@@ -213,6 +247,8 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
 
     # fill moment tensor object
     mt = DM.MomentTensor.Create()
+    if publicid_slug is not None:
+        mt.setPublicID(f"MomentTensor/{publicid_slug}")
     mt.setTensor(tensor)
     mt.setCreationInfo(ci)
     mt.setDerivedOriginID(derivedOrigin.publicID())
@@ -251,6 +287,8 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
             DM.Notifier.Create(evid, DM.OP_ADD, oRef),
             DM.Notifier.Create(evid, DM.OP_ADD, fmRef),
         ]
+    else:
+        notifiers = None
 
     # Adding these seems to *immediately* queue up the notifications; so we
     # must do this *after* notifying the origin/FM so that scmaster
@@ -258,17 +296,15 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     derivedOrigin.add(mag)
     fm.add(mt)
 
-    ret = {
+    return {
         "derivedOrigin": derivedOrigin,
         "momentMagnitude": mag,
         "focalMechanism": fm,
+        "notifiers": notifiers,
     }
-    if with_notifiers:
-        ret["notifiers"] = notifiers
-    return ret
 
 
-def createAndSendObjects(item, connection, **kwargs):
+def createAndSendObjects(item, connection, **kwargs) -> SeiscompResults:
     """Convert the given FMItem to seiscomp3.DataModel objects, send them over
     the given connection, and return them.
 
@@ -276,7 +312,7 @@ def createAndSendObjects(item, connection, **kwargs):
     :param seiscomp3.Client.Connection connection: seiscomp messaging connection
     :rtype: dict"""
     # create SeiscomP3 objects from focal mechanism item
-    with SCNotifier():
+    with SCNotifierEnabled():
         ret = createObjects(item, with_notifiers=True, **kwargs)
 
     try:
@@ -293,7 +329,7 @@ def createAndSendObjects(item, connection, **kwargs):
     return ret
 
 
-def writeSCML(filename, objects):
+def writeSCML(filename: Union[str, Path], objects: SeiscompResults):
     """Given seiscomp3.DataModel objects (as produced by createObjects),
     write them to an XML file.
 
@@ -306,12 +342,10 @@ def writeSCML(filename, objects):
     ar.setFormattedOutput(True)
 
     # try to create the output file
-    ar.create(filename)
-
+    ar.create(str(filename))
 
     ep = DM.EventParameters()
     ep.add(objects["derivedOrigin"])
     ep.add(objects["focalMechanism"])
     ar.writeObject(ep)
     ar.close()
-    return True

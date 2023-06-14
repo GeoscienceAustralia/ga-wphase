@@ -305,10 +305,10 @@ def writeSCML(filename, objects):
     # try to create the output file
     ar.create(filename)
 
-    # Serialize the objects
-    for x in objects.values():
-        if isinstance(x, DM.PublicObject):
-            ar.writeObject(x)
 
+    ep = DM.EventParameters()
+    ep.add(objects["derivedOrigin"])
+    ep.add(objects["focalMechanism"])
+    ar.writeObject(ep)
     ar.close()
     return True

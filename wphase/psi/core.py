@@ -637,6 +637,8 @@ def wpinv(
         grid_search_candidates=[row[1] for row in grid_search_inputs],
         grid_search_results=grid_search_results,
     )
+
+    result.CreationTime = UTCDateTime.now()
     return result
 
 

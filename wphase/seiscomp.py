@@ -89,8 +89,11 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     if not (mtresult and preferredOL):
         raise ValueError("W-Phase result contains no MomentTensor to convert/send!")
 
-    # get current time in UTC
-    time = Core.Time.GMT()
+    if item.CreationTime is None:
+        # default to current time in UTC
+        time = Core.Time.GMT()
+    else:
+        time = datetime_to_seiscomp(item.CreationTime)
 
     # create creation info
     ci = DM.CreationInfo()

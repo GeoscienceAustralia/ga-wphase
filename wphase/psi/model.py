@@ -31,6 +31,7 @@ else:
 class Data(BaseModel):
     class Config:
         json_encoders = {
+            # We keep this datetime format for backwards compatibility:
             _UTCDateTime: lambda t: str(t).replace("T", " ").replace("Z", ""),
             np.ndarray: np.ndarray.tolist,
         }
@@ -186,6 +187,7 @@ class WPhaseResult(Data):
 
     DataSource: Optional[str] = None
     HostName: Optional[str] = None
+    CreationTime: Optional[UTCDateTime] = None
 
     def add_warning(self, warning):
         self.Warnings.append(str(warning))

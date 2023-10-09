@@ -1,15 +1,15 @@
 """Send an email via Amazon SES or SMTP."""
 from __future__ import absolute_import, print_function
-
-
+from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email.utils import formatdate
 import logging
 from smtplib import SMTP, SMTP_SSL
+from typing import List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
-def send_email(recipients, subject, message, from_email=None, method='ses', **kwargs):
+def send_email(recipients: List[str], subject: List[str], message: Union[str, MIMEBase], from_email: Optional[str] = None, method='ses', **kwargs):
     """Send a simple HTML email via either SES or SMTP."""
     if method == 'ses':
         from wphase.aws import send_email_via_ses
@@ -19,23 +19,21 @@ def send_email(recipients, subject, message, from_email=None, method='ses', **kw
     else:
         raise ValueError('Unknown email method {}'.format(method))
 
-    if isinstance(recipients, list):
-        emails = recipients
-    else:
-        emails = [recipients]
-
-    if not emails:
+    if not recipients:
         return
 
     if from_email is None:
-        from_email = emails[0] # TODO is this REALLY sensible?
+        from_email = recipients[0] # TODO is this REALLY sensible?
 
     # create the message
-    msg = MIMEText(message, 'html')
+    if isinstance(message, str):
+        msg = MIMEText(message, 'html')
+    else:
+        msg = message
 
     # add headers
     msg["From"] = from_email
-    msg["To"] = ','.join(emails)
+    msg["To"] = ','.join(recipients)
     msg["Date"] = str(formatdate(localtime=True))
     msg["Subject"] = subject
 

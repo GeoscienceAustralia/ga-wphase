@@ -465,6 +465,7 @@ class WPhase(Application):
                 result_id=self.resultid,
                 result=result,
                 call_succeeded=success,
+                output_dir=self.output,
             )
             send_email(
                 recipients=self.notificationemail,
@@ -490,6 +491,7 @@ class WPhase(Application):
         event_id: str,
         result_id: str,
         result: Optional[model.WPhaseResult],
+        output_dir: str,
         call_succeeded: bool,
     ):
         """Create email subject and body to notify result.

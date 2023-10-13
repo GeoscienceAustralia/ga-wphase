@@ -1234,8 +1234,8 @@ def get_timedelay_misfit(t_d, GFmatrix, trlen, observed_displacements, max_t_d):
         max_t_d = int(max_t_d)
         t_d = int(t_d)
         t_d2 = max_t_d - t_d
-        GFmatrix_sm = np.zeros((np.array(trlen,dtype=np.int).sum(),5))
-        cumtrlens = np.concatenate(([0], np.array(trlen,dtype=np.int).cumsum()))
+        GFmatrix_sm = np.zeros((np.array(trlen,dtype=int).sum(),5))
+        cumtrlens = np.concatenate(([0], np.array(trlen,dtype=int).cumsum()))
         tb_fm = 0
         for i_ntr, ta in enumerate(cumtrlens[:-1]):
             l = trlen[i_ntr]

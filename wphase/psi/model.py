@@ -31,6 +31,7 @@ else:
 class Data(BaseModel):
     class Config:
         json_encoders: Mapping[type, Callable] = {
+            # We keep this datetime format for backwards compatibility:
             _UTCDateTime: lambda t: str(t).replace("T", " ").replace("Z", ""),
             np.ndarray: np.ndarray.tolist,
             complex: lambda z: (z.imag, z.real)
@@ -66,7 +67,7 @@ class OL1Result(Data):
     used_traces: List[str]
     """List of waveform stream IDs of channels used in fit"""
 
-    preliminary_calc_details: PreliminaryMagnitudeFit = Field(exclude=True)
+    preliminary_calc_details: Optional[PreliminaryMagnitudeFit] = Field(exclude=True)
 
 
 class OL2Result(Data):
@@ -106,11 +107,11 @@ class OL2Result(Data):
     periods: Tuple[float, float]
     """Periods of the bandpass filter used (low, high; in seconds)"""
 
-    moment_tensor: np.ndarray = Field(exclude=True)
+    moment_tensor: Optional[np.ndarray] = Field(exclude=True)
     """Moment tensor in Newton-metres as a 6-element array"""
-    observed_displacements: np.ndarray = Field(exclude=True)
+    observed_displacements: Optional[np.ndarray] = Field(exclude=True)
     """Observed displacements (after filtering)"""
-    synthetic_displacements: np.ndarray = Field(exclude=True)
+    synthetic_displacements: Optional[np.ndarray] = Field(exclude=True)
     """Synthetic displacements for this solution"""
 
 
@@ -134,8 +135,8 @@ class Quality(Data):
     """Basic quality parameters of a W-Phase solution."""
 
     azimuthal_gap: float
-    number_of_stations: float
-    number_of_channels: float
+    number_of_stations: int
+    number_of_channels: int
 
 
 class Event(Data):
@@ -235,6 +236,7 @@ class WPhaseResult(Data):
 
     DataSource: Optional[str] = None
     HostName: Optional[str] = None
+    CreationTime: Optional[UTCDateTime] = None
 
     def add_warning(self, warning):
         self.Warnings.append(str(warning))

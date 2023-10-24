@@ -1,6 +1,10 @@
 """Methods to convert results to seiscomp formats."""
+from __future__ import absolute_import, annotations
 from contextlib import contextmanager
+from dataclasses import dataclass
 import logging
+from pathlib import Path
+from typing import List, Optional, Union
 
 
 from obspy.core import UTCDateTime
@@ -58,7 +62,7 @@ def datetime_to_seiscomp(dt):
 
 
 @contextmanager
-def SCNotifier():
+def SCNotifierEnabled():
     """seiscomp entities created (and associated with each other) inside this
     context manager will be logged to the Notifier."""
     wasEnabled = DM.Notifier.IsEnabled()
@@ -69,7 +73,26 @@ def SCNotifier():
         DM.Notifier.SetEnabled(wasEnabled)
 
 
-def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
+try:
+    from typing import TypedDict
+except ImportError:
+    pass
+else:
+
+    class SeiscompResults(TypedDict):
+        momentMagnitude: DM.Magnitude
+        derivedOrigin: DM.Origin
+        focalMechanism: DM.FocalMechanism
+        notifiers: Optional[List[DM.Notifier]]
+
+
+def createObjects(
+    item: WPhaseResult,
+    agency,
+    evid=None,
+    with_notifiers=False,
+    publicid_slug: Optional[str] = None,
+) -> SeiscompResults:
     """Convert a WPhaseResult to seiscomp3.DataModel objects, optionally sending
     Notifier events to messaging.
 
@@ -78,46 +101,57 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     :param bool with_notifiers:
         If true, seiscomp3.DataModel.Notifier instances will be created linking
         the FocalMechanism and derived Origin to the triggering event.
+    :param str publicid_slug:
+        If provided, publicIDs are built from templates using this string
+        rather than dynamically based on time. (Used for deterministic outputs
+        in tests.)
     :rtype: dict
     :return:
         A dictionary with keys focalMechanism, derivedOrigin, momentMagnitude
         (mapped to seiscomp3.DataModel objects), and optionally notifiers
         (mapped to a list of Notifiers)."""
-    mt = item.MomentTensor
+    mtresult = item.MomentTensor
     preferredOL = item.OL3 or item.OL2
-    if not (mt and preferredOL):
+    if not (mtresult and preferredOL):
         raise ValueError("W-Phase result contains no MomentTensor to convert/send!")
 
-    # get current time in UTC
-    time = Core.Time.GMT()
+    if item.CreationTime is None:
+        # default to current time in UTC
+        time = Core.Time.GMT()
+    else:
+        time = datetime_to_seiscomp(item.CreationTime)
 
     # create creation info
     ci = DM.CreationInfo()
     ci.setCreationTime(time)
     ci.setAgencyID(agency)
-    ci.setAuthor(charstar(mt.auth))
+    ci.setAuthor(charstar(mtresult.auth))
 
     originTime = DM.TimeQuantity(datetime_to_seiscomp(item.Event.time))
 
     # fill derived origin
     derivedOrigin = DM.Origin.Create()
+    if publicid_slug is not None:
+        derivedOrigin.setPublicID(f"Origin/{publicid_slug}")
     derivedOrigin.setCreationInfo(ci)
     derivedOrigin.setTime(originTime)
-    derivedOrigin.setLatitude(DM.RealQuantity(mt.drlat))
-    derivedOrigin.setLongitude(DM.RealQuantity(mt.drlon))
-    derivedOrigin.setDepth(DM.RealQuantity(mt.drdepth))
+    derivedOrigin.setLatitude(DM.RealQuantity(mtresult.drlat))
+    derivedOrigin.setLongitude(DM.RealQuantity(mtresult.drlon))
+    derivedOrigin.setDepth(DM.RealQuantity(mtresult.drdepth))
     derivedOrigin.setEvaluationMode(DM.AUTOMATIC)
     derivedOrigin.setEvaluationStatus(DM.CONFIRMED)
 
     originQuality = DM.OriginQuality()
     if item.QualityParams is not None:
         try:
-            originQuality.setUsedPhaseCount(item.QualityParams.number_of_channels)
+            originQuality.setUsedPhaseCount(int(item.QualityParams.number_of_channels))
         except Exception:
             pass
 
         try:
-            originQuality.setUsedStationCount(item.QualityParams.number_of_stations)
+            originQuality.setUsedStationCount(
+                int(item.QualityParams.number_of_stations)
+            )
         except Exception:
             pass
 
@@ -129,14 +163,16 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
         derivedOrigin.setType(DM.HYPOCENTER)
 
     # fill magnitude
+    mag = DM.Magnitude.Create()
+    if publicid_slug is not None:
+        mag.setPublicID(f"Magnitude/{publicid_slug}")
     try:
-        mag = DM.Magnitude.Create()
-        mag.setMagnitude(DM.RealQuantity(mt.drmag))
+        mag.setMagnitude(DM.RealQuantity(mtresult.drmag))
         mag.setCreationInfo(ci)
         mag.setOriginID(derivedOrigin.publicID())
-        mag.setType(charstar(mt.drmagt))
+        mag.setType(charstar(mtresult.drmagt))
         if item.QualityParams:
-            mag.setStationCount(item.QualityParams.number_of_stations)
+            mag.setStationCount(int(item.QualityParams.number_of_stations))
         mag.setMethodID("wphase")
     except Exception as e:
         logger.error("Failed to configure magnitude: {}".format(e))
@@ -146,18 +182,20 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     np1 = DM.NodalPlane()
     np2 = DM.NodalPlane()
 
-    np1.setStrike(DM.RealQuantity(mt.str1))
-    np1.setDip(DM.RealQuantity(mt.dip1))
-    np1.setRake(DM.RealQuantity(mt.rake1))
+    np1.setStrike(DM.RealQuantity(mtresult.str1))
+    np1.setDip(DM.RealQuantity(mtresult.dip1))
+    np1.setRake(DM.RealQuantity(mtresult.rake1))
 
-    np2.setStrike(DM.RealQuantity(mt.str2))
-    np2.setDip(DM.RealQuantity(mt.dip2))
-    np2.setRake(DM.RealQuantity(mt.rake2))
+    np2.setStrike(DM.RealQuantity(mtresult.str2))
+    np2.setDip(DM.RealQuantity(mtresult.dip2))
+    np2.setRake(DM.RealQuantity(mtresult.rake2))
 
     nodalPlanes.setNodalPlane1(np1)
     nodalPlanes.setNodalPlane2(np2)
 
     fm = DM.FocalMechanism.Create()
+    if publicid_slug is not None:
+        fm.setPublicID(f"FocalMechanism/{publicid_slug}")
     fm.setNodalPlanes(nodalPlanes)
     fm.setCreationInfo(ci)
     fm.setMethodID("wphase")
@@ -166,7 +204,7 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     misfit = preferredOL.misfit / 100.0
     fm.setMisfit(misfit)
     if item.QualityParams:
-        fm.setStationPolarityCount(item.QualityParams.number_of_channels)
+        fm.setStationPolarityCount(int(item.QualityParams.number_of_channels))
         try:
             fm.setAzimuthalGap(item.QualityParams.azimuthal_gap)
         except Exception:
@@ -178,49 +216,51 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     tensor = DM.Tensor()
 
     try:
-        tensor.setMtp(DM.RealQuantity(fm.tmtp))
+        tensor.setMtp(DM.RealQuantity(mtresult.tmtp))
     except Exception:
         pass
 
     try:
-        tensor.setMtt(DM.RealQuantity(fm.tmtt))
+        tensor.setMtt(DM.RealQuantity(mtresult.tmtt))
     except Exception:
         pass
 
     try:
-        tensor.setMrt(DM.RealQuantity(fm.tmrt))
+        tensor.setMrt(DM.RealQuantity(mtresult.tmrt))
     except Exception:
         pass
 
     try:
-        tensor.setMrr(DM.RealQuantity(fm.tmrr))
+        tensor.setMrr(DM.RealQuantity(mtresult.tmrr))
     except Exception:
         pass
 
     try:
-        tensor.setMrp(DM.RealQuantity(fm.tmrp))
+        tensor.setMrp(DM.RealQuantity(mtresult.tmrp))
     except Exception:
         pass
 
     try:
-        tensor.setMpp(DM.RealQuantity(fm.tmpp))
+        tensor.setMpp(DM.RealQuantity(mtresult.tmpp))
     except Exception:
         pass
 
     # fill moment tensor object
     mt = DM.MomentTensor.Create()
+    if publicid_slug is not None:
+        mt.setPublicID(f"MomentTensor/{publicid_slug}")
     mt.setTensor(tensor)
     mt.setCreationInfo(ci)
     mt.setDerivedOriginID(derivedOrigin.publicID())
     mt.setMethodID("wphase")
 
     try:
-        mt.setClvd(fm.clvd)
+        mt.setClvd(mtresult.clvd)
     except Exception:
         pass
 
     try:
-        mt.setDoubleCouple(fm.dc)
+        mt.setDoubleCouple(mtresult.dc)
     except Exception:
         pass
 
@@ -247,6 +287,8 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
             DM.Notifier.Create(evid, DM.OP_ADD, oRef),
             DM.Notifier.Create(evid, DM.OP_ADD, fmRef),
         ]
+    else:
+        notifiers = None
 
     # Adding these seems to *immediately* queue up the notifications; so we
     # must do this *after* notifying the origin/FM so that scmaster
@@ -254,17 +296,15 @@ def createObjects(item: WPhaseResult, agency, evid=None, with_notifiers=False):
     derivedOrigin.add(mag)
     fm.add(mt)
 
-    ret = {
+    return {
         "derivedOrigin": derivedOrigin,
         "momentMagnitude": mag,
         "focalMechanism": fm,
+        "notifiers": notifiers,
     }
-    if with_notifiers:
-        ret["notifiers"] = notifiers
-    return ret
 
 
-def createAndSendObjects(item, connection, **kwargs):
+def createAndSendObjects(item, connection, **kwargs) -> SeiscompResults:
     """Convert the given FMItem to seiscomp3.DataModel objects, send them over
     the given connection, and return them.
 
@@ -272,7 +312,7 @@ def createAndSendObjects(item, connection, **kwargs):
     :param seiscomp3.Client.Connection connection: seiscomp messaging connection
     :rtype: dict"""
     # create SeiscomP3 objects from focal mechanism item
-    with SCNotifier():
+    with SCNotifierEnabled():
         ret = createObjects(item, with_notifiers=True, **kwargs)
 
     try:
@@ -289,7 +329,7 @@ def createAndSendObjects(item, connection, **kwargs):
     return ret
 
 
-def writeSCML(filename, objects):
+def writeSCML(filename: Union[str, Path], objects: SeiscompResults):
     """Given seiscomp3.DataModel objects (as produced by createObjects),
     write them to an XML file.
 
@@ -302,12 +342,10 @@ def writeSCML(filename, objects):
     ar.setFormattedOutput(True)
 
     # try to create the output file
-    ar.create(filename)
+    ar.create(str(filename))
 
-    # Serialize the objects
-    for x in objects.values():
-        if isinstance(x, DM.PublicObject):
-            ar.writeObject(x)
-
+    ep = DM.EventParameters()
+    ep.add(objects["derivedOrigin"])
+    ep.add(objects["focalMechanism"])
+    ar.writeObject(ep)
     ar.close()
-    return True

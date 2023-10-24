@@ -585,6 +585,7 @@ def wpinv(
         result.OL1 = ol1
 
     if OL == 1:
+        result.CreationTime = UTCDateTime.now()
         return result
 
     with timer:
@@ -593,6 +594,7 @@ def wpinv(
 
     assert result.OL2 is not None
 
+    result.CreationTime = UTCDateTime.now()
     if OL == 2:
         return result
 
@@ -618,6 +620,7 @@ def wpinv(
     #     mf = r and f"{r:2.1f}%" or "-----"
     #     logger.info(f"{l}: {mf} in {t:3.2f}s")
 
+    result.CreationTime = UTCDateTime.now()
     return result
 
 

@@ -30,7 +30,7 @@ else:
 
 setup(
     name = 'Wphase',
-    version = '0.3.1',
+    version = '0.3.4',
     packages = ['wphase', 'wphase.psi'],
     author = 'Geoscience Australia',
     description = 'Wphase calculations and web interface.',
@@ -45,7 +45,7 @@ setup(
             'wphase/psi/ttimes_subrout.f',
             'wphase/psi/libtau.f'])
     ],
-    python_requires = '>=3.6.0',
+    python_requires = '>=3.7.0',
     install_requires = [
         'h5py',
         'matplotlib', # obspy imports this anyway, so we don't relegate it to [plotting]

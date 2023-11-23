@@ -329,7 +329,7 @@ class WPhase(Application):
                 self.eqinfo = model.Event(
                     longitude=origin.longitude,
                     latitude=origin.latitude,
-                    depth=origin.depth,
+                    depth=origin.depth / 1000,
                     time=origin.time,
                 )
 

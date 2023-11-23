@@ -92,6 +92,7 @@ def createObjects(
     evid=None,
     with_notifiers=False,
     publicid_slug: Optional[str] = None,
+    triggering_origin_id: Optional[str] = None,
 ) -> SeiscompResults:
     """Convert a WPhaseResult to seiscomp3.DataModel objects, optionally sending
     Notifier events to messaging.
@@ -193,9 +194,11 @@ def createObjects(
     nodalPlanes.setNodalPlane1(np1)
     nodalPlanes.setNodalPlane2(np2)
 
-    fm = DM.FocalMechanism.Create()
+    fm: DM.FocalMechanism = DM.FocalMechanism.Create()
     if publicid_slug is not None:
         fm.setPublicID(f"FocalMechanism/{publicid_slug}")
+    if triggering_origin_id is not None:
+        fm.setTriggeringOriginID(triggering_origin_id)
     fm.setNodalPlanes(nodalPlanes)
     fm.setCreationInfo(ci)
     fm.setMethodID("wphase")

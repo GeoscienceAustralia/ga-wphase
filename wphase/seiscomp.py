@@ -157,6 +157,7 @@ def createObjects(
             pass
 
     derivedOrigin.setQuality(originQuality)
+    derivedOrigin.setMethodID("wphase")
 
     if item.Centroid:
         derivedOrigin.setType(DM.CENTROID)

@@ -311,6 +311,7 @@ def post_process_wpinv(
             depth=round(cenloc[2], 1),
             latitude=round(cenloc[0], 3),
             longitude=round(cenloc[1], 3),
+            time=mtResult.centroid_time,
         )
 
         if make_maps:

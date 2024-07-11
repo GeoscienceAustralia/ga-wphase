@@ -5,6 +5,7 @@ from __future__ import absolute_import, print_function
 import json
 import logging
 import os
+import re
 import sys
 from tempfile import NamedTemporaryFile
 
@@ -12,6 +13,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from obspy.clients.fdsn import Client
+from obspy.core.event import Origin
 
 from seiscomp3 import DataModel as DM, Logging, IO, Core
 from seiscomp3.Client import Application
@@ -68,6 +70,7 @@ class WPhase(Application):
         self.fromemail = None
         self.email_aws_region = None
         self.email_method = 'ses'
+        self.triggering_origin_id = None
 
         self.email_subject_postfix = ''
         self.email_subject_prefix = ''
@@ -154,6 +157,10 @@ class WPhase(Application):
             "Input",
             "magvalue",
             "The magnitude of the triggering event.")
+        self.commandline().addStringOption(
+            "Input",
+            "triggeringoriginid",
+            "The publicID of the triggering origin.")
         self.commandline().addStringOption(
             "Input",
             "waveforms",
@@ -316,7 +323,7 @@ class WPhase(Application):
                     return False
                 try:
                     cat = self.fdsn_client.get_events(eventid=self.evid)
-                    origin = cat.events[0].preferred_origin()
+                    origin: Origin = cat.events[0].preferred_origin()
                 except Exception:
                     logger.exception("Could not retrieve event %s from FDSN server at %s",
                                      self.evid, self.server)
@@ -324,13 +331,21 @@ class WPhase(Application):
                 self.eqinfo = model.Event(
                     longitude=origin.longitude,
                     latitude=origin.latitude,
-                    depth=origin.depth,
+                    depth=origin.depth / 1000,
                     time=origin.time,
+                )
+                self.triggering_origin_id = re.sub(
+                    r"^smi:org.gfz-potsdam.de/geofon/",
+                    "",
+                    str(origin.resource_id),
                 )
 
             getter('sourcezone')
             getter('magtype', 'mag_type')
             getter('magvalue', 'mag_value', conv=float)
+            getter('triggeringoriginid', 'triggering_origin_id')
+            if not self.triggering_origin_id:
+                self.triggering_origin_id = None # normalize empty string to None
             getter('outputs', 'output')
             getter('networks')
             getter('region')
@@ -425,7 +440,11 @@ class WPhase(Application):
         if result is not None:
             try:
                 objs = createAndSendObjects(
-                    result, self.connection(), evid=self.evid, agency=self.agency
+                    result,
+                    self.connection(),
+                    evid=self.evid,
+                    agency=self.agency,
+                    triggering_origin_id=self.triggering_origin_id,
                 )
             except Exception:
                 logger.exception("Failed to create objects for SC3.")

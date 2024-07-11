@@ -501,7 +501,7 @@ def wpinv(
 
     #### Removing individual bad fitting. this recursively removes stations with misfits
     # outside of the acceptable range defined by the setting MISFIT_TOL_SEQUENCE.
-    M, misfit, GFmatrix = core_inversion(
+    M, misfit, trmisfits, GFmatrix = core_inversion(
         t_d,
         (hyplat, hyplon, hypdep),
         (Ta, Tb),
@@ -529,7 +529,7 @@ def wpinv(
             logger.error(msg)
             raise InversionError(msg)
 
-        M, misfit, GFmatrix = core_inversion(
+        M, misfit, trmisfits, GFmatrix = core_inversion(
             t_d,
             (hyplat, hyplon, hypdep),
             (Ta,Tb),
@@ -548,6 +548,7 @@ def wpinv(
 
 
     trace_lengths = list(zip(trlist, trlen))
+    trmisfits = list(zip(trlist, trmisfits))
     result.OL2 = make_result(
         OL2Result,
         M,
@@ -559,6 +560,7 @@ def wpinv(
         observed_displacements=observed_displacements,
         synthetic_displacements=syn,
         trace_lengths=OrderedDict(trace_lengths),
+        trace_misfits=OrderedDict(trmisfits),
     )
 
     if len(trlen) == 0:
@@ -610,7 +612,7 @@ def wpinv(
     # search, we threw away the corresponding synthetic waveforms; so we need
     # to re-run the inversion to get them.
 
-    M, misfit, GFmatrix = core_inversion(t_d, (cenlat, cenlon, cendep),
+    M, misfit, trmisfits, GFmatrix = core_inversion(t_d, (cenlat, cenlon, cendep),
                                          (Ta,Tb), MRF, observed_displacements,
                                          trlen, metadata, trlist, gfdir=gfdir,
                                          return_gfs=True)
@@ -621,6 +623,7 @@ def wpinv(
 
 
     trace_lengths = list(zip(trlist, trlen))
+    trmisfits = list(zip(trlist, trmisfits))
 
     result.OL3 = make_result(
         OL3Result,
@@ -629,11 +632,13 @@ def wpinv(
         depth=cendep,
         time_delay=t_d,
         centroid=(cenlat, cenlon, cendep),
+        centroid_time=event.time + t_d,
         used_traces=trlist,
         moment_tensor=M,
         observed_displacements=observed_displacements,
         synthetic_displacements=syn,
         trace_lengths=OrderedDict(trace_lengths),
+        trace_misfits=OrderedDict(trmisfits),
         grid_search_candidates=[row[1] for row in grid_search_inputs],
         grid_search_results=grid_search_results,
     )
@@ -1079,13 +1084,24 @@ def core_inversion(
     M = np.insert(M, 2, -M[0]-M[1])
 
     # extract the residuals and scale if required
+    squared_error = (syn - observed_displacements)**2
     if residuals:
         misfit = float(inversion[1])
     else:
-        misfit = 100.*np.sqrt(np.sum((syn-observed_displacements)**2)/np.sum(syn**2))
+        misfit = 100.*np.sqrt(np.sum(squared_error)/np.sum(syn**2))
+
+    trmisfits = []
+    for i in range(len(trlist)):
+        ta = indexes[i]
+        tb = indexes[i+1]
+        trmisfits.append(
+            100 * np.sqrt(
+                np.sum(squared_error[ta:tb]) / np.sum(syn[ta:tb]**2)
+            )
+        )
 
     if return_gfs:
-        return M, misfit, GFmatrix
+        return M, misfit, trmisfits, GFmatrix
 
     return M, misfit
 

@@ -146,7 +146,8 @@
             "PM.PFVI..BHZ": 895,
             "G.TAM.00.BHZ": 906,
             "IU.PAB.00.BHZ": 848
-        }
+        },
+        "trace_misfits": {}
     },
     "OL3": {
         "Mrr": -2.54973659062008e+18,
@@ -200,7 +201,9 @@
             -23.21291809,
             -66.23518829000001,
             170.5
-        ]
+        ],
+        "centroid_time": "2023-03-22 16:00:30.391000",
+        "trace_misfits": {}
     },
     "QualityParams": {
         "azimuthal_gap": 86.22426683163565,
@@ -233,7 +236,8 @@
     "Centroid": {
         "depth": 170.5,
         "latitude": -23.213,
-        "longitude": -66.235
+        "longitude": -66.235,
+        "time": "2023-03-22 16:00:30.391000"
     },
     "misfits": {
         "array": [

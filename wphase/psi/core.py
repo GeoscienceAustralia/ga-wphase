@@ -12,7 +12,11 @@ from typing import Sequence
 import numpy as np
 from numpy.linalg import lstsq
 from scipy.interpolate import interp1d
-from scipy.signal import triang
+
+try:
+    from scipy.signal.windows import triang
+except ImportError:
+    from scipy.signal import triang
 from scipy import ndimage
 from scipy.signal import detrend
 import h5py

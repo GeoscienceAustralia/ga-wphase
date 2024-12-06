@@ -9,3 +9,7 @@ Wphase.egg*/
 /tests/test-datasets
 prof
 tests/prof
+/scratch
+/CMakeFiles
+/CMakeCache.txt
+/tests/validation_cases.json

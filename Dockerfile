@@ -3,7 +3,6 @@ ADD https://github.com/GeoscienceAustralia/ga-wphase/releases/download/v0.3.2/se
 RUN cd /opt && tar xfz seiscomp*.tar.gz
 
 FROM ubuntu:24.04 AS wphase
-COPY --from=seiscomp /opt/seiscomp/ /opt/seiscomp/
 RUN apt-get update &&  \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
         build-essential \
@@ -35,8 +34,10 @@ ARG DOCKER_USER_UID=1000
 RUN userdel -r ubuntu && \
     groupadd -r -g $DOCKER_USER_GID wphase && \
     useradd -r -g wphase -u $DOCKER_USER_UID -s /bin/bash -d /home/wphase -c "docker user" wphase && \
-    mkdir -p /home/wphase/app /opt/seiscomp && \
-    chown -R wphase:wphase /home/wphase /opt/seiscomp
+    mkdir -p /home/wphase/app && \
+    chown -R wphase:wphase /home/wphase
+
+COPY --from=seiscomp --chown=wphase:wphase /opt/seiscomp/ /opt/seiscomp/
 
 USER wphase
 WORKDIR /home/wphase/app

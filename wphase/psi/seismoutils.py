@@ -1,12 +1,8 @@
 ''' This module contains useful fuctions to handle seismic data
     with obspy
 '''
-from __future__ import absolute_import, print_function
 
-from future import standard_library
 from obspy.core.stream import Stream
-standard_library.install_aliases()
-from builtins import range
 import urllib.request, urllib.error, urllib.parse, sys
 import logging
 import math

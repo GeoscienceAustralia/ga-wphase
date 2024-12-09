@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 """Runs W-Phase, sends results to seiscomp3 messaging and copies files to S3."""
-from __future__ import absolute_import, print_function
 
 import json
 import logging

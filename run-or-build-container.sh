@@ -22,27 +22,18 @@ HOST_WPHASE_GREENS_FUNCTIONS="$HOME/wphase/greens/gfs_1.hdf5"
 
 mkdir -p $HOST_WPHASE_OUTPUT_DIR
 if [ "$mode" == "build" ]; then
-    docker build \
-        -t "$IMAGE_NAME" \
-        -f ./docker/Dockerfile \
-        .
+    docker build -t "$IMAGE_NAME" .
 
 elif [ "$mode" == "run" ]; then
     # Run container for development
-    if [ "${#cmds[@]}" == 0 ]; then
-        cmds=(bash -l)
-    else
-        cmd="${cmds[@]}"
-        cmds=(bash -lc "$cmd") # this is an array, not a subshell!
-    fi
     docker run -it --rm \
         --network=host \
         --mount type=bind,source="$HOST_WPHASE_GREENS_FUNCTIONS",target=/greens,readonly=true \
         --mount type=bind,source="$HOST_WPHASE_OUTPUT_DIR",target=/outputs,readonly=false \
         --mount type=bind,source=`pwd`,target="/home/wphase/app",readonly=false \
-        --entrypoint /bin/bash \
+        --entrypoint uv \
         "$IMAGE_NAME" \
-        /home/wphase/reinstall-wphase-and-run "${cmds[@]}"
+        run "${cmds[@]}"
 
 elif [ "$mode" == "run-wphase" ]; then
     # A single, production-style run

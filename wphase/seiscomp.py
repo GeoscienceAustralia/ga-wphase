@@ -1,5 +1,5 @@
 """Methods to convert results to seiscomp formats."""
-from __future__ import absolute_import, annotations
+from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 import logging

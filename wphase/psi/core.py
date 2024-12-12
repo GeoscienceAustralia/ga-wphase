@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 """Core implementation of the W-Phase inversion."""
-from __future__ import absolute_import, print_function
 
-from builtins import str
-from builtins import range
 from collections import OrderedDict
 import sys, os, glob, traceback, logging
 from concurrent.futures import ProcessPoolExecutor
@@ -12,7 +9,11 @@ from typing import Sequence
 import numpy as np
 from numpy.linalg import lstsq
 from scipy.interpolate import interp1d
-from scipy.signal import triang
+
+try:
+    from scipy.signal.windows import triang
+except ImportError:
+    from scipy.signal import triang
 from scipy import ndimage
 from scipy.signal import detrend
 import h5py

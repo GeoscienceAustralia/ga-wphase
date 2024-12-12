@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 import sys
 from os.path import join, abspath
 from typing import Optional
@@ -11,18 +10,18 @@ from obspy import UTCDateTime
 
 from eatws_skip_client import SKIP, Event
 from wphase import runwphase
-from validation_cases import result_keys, DATA_DIR, add_case
+from tests.validation_cases import result_keys, DATA_DIR, add_case
 
 # get event data from production SKIP
-skip = SKIP('https://skip.eatws.net',
-            secret_id='skip-prod-readonly-access')
+skip = SKIP("https://skip.eatws.net", secret_id="skip-prod-readonly-access")
 
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+
 
 def prepare_test_case(evid, inventory=None, waveforms=None):
     event: Optional[Event] = skip.get_event(evid)
     if not event:
-        raise ValueError('%s not found in SKIP' % evid)
+        raise ValueError("%s not found in SKIP" % evid)
     eqinfo = dict(
         id=event.id,
         lat=event.latitude,
@@ -32,10 +31,10 @@ def prepare_test_case(evid, inventory=None, waveforms=None):
     )
     datadir = abspath(DATA_DIR)
     result = runwphase(
-        server='IRIS',
+        server="IRIS",
         eqinfo=eqinfo,
-        save_waveforms=join(datadir, '%s.mseed' % evid),
-        save_inventory=join(datadir, '%s.xml' % evid),
+        save_waveforms=join(datadir, "%s.mseed" % evid),
+        save_inventory=join(datadir, "%s.xml" % evid),
         inventory=inventory,
         waveforms=waveforms,
     )
@@ -53,8 +52,11 @@ def prepare_test_case(evid, inventory=None, waveforms=None):
     print(json.dumps(case, indent=4))
     add_case(case)
     print("This test case has been added to validation_cases.json and test-datasets/.")
-    print("To create a new release tarball: "
-          "tar czvf ga-wphase-test-datasets.tar.gz test-datasets/ validation_cases.json")
+    print(
+        "To create a new release tarball: "
+        "tar czvf ga-wphase-test-datasets.tar.gz test-datasets/ validation_cases.json"
+    )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     prepare_test_case(*sys.argv[1:])

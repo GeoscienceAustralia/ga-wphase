@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 """Some utilities to make nice plots."""
-from __future__ import absolute_import, print_function
 import os
-
-from builtins import range
 
 import logging
 from collections import OrderedDict

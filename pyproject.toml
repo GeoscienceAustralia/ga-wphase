@@ -1,0 +1,46 @@
+[project]
+name = "wphase"
+version = "0.3.6"
+description = "Wphase calculations and web interface."
+authors = [
+    {name = "Geoscience Australia"},
+]
+dependencies = [
+    "h5py",
+    "matplotlib",
+    "numpy<=1.24.4 ; python_full_version < '3.12'",
+    "numpy>1.24.4,<2 ; python_full_version >= '3.12'",
+    "obspy",
+    "pydantic~=1.9",
+    "pyinstrument==0.13.1",
+    "pytest",
+    # obspy depends on setuptools, and can end up installing v59 which is incompatible
+    # with python 3.12:
+    "setuptools>=75; python_full_version >= '3.12'",
+    "scipy>=0.16.0,<1.11; python_full_version < '3.12'",
+    "scipy>=1.11; python_full_version >= '3.12'",
+]
+requires-python = ">=3.9"
+readme = "README.md"
+license = {text = "MIT"}
+
+[project.scripts]
+wphase = "wphase.cli:main"
+
+[build-system]
+requires = ["scikit-build-core", "numpy"]
+build-backend = "scikit_build_core.build"
+
+[dependency-groups]
+dev = ["cartopy>=0.22"]
+
+[project.optional-dependencies]
+aws = ["boto3"]
+plotting = ["cartopy>=0.22"]
+
+[tool.uv]
+cache-keys = [
+    { file = "wphase/psi/*.f" },
+    { file = "wphase/psi/*.pyf" },
+    { file = "CMakeLists.txt" },
+]

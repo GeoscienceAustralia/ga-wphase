@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<seiscomp xmlns="http://geofon.gfz-potsdam.de/ns/seiscomp3-schema/0.12" version="0.12">
+<seiscomp xmlns="http://geofon.gfz-potsdam.de/ns/seiscomp3-schema/0.13" version="0.13">
   <EventParameters>
     <origin publicID="Origin/test">
       <time>
@@ -14,6 +14,7 @@
       <depth>
         <value>170.5</value>
       </depth>
+      <methodID>wphase</methodID>
       <quality>
         <usedPhaseCount>16</usedPhaseCount>
         <usedStationCount>16</usedStationCount>
@@ -28,7 +29,7 @@
       </creationInfo>
       <magnitude publicID="Magnitude/test">
         <magnitude>
-          <value>6.366682798</value>
+          <value>6.366682797749126</value>
         </magnitude>
         <type>Mww</type>
         <originID>Origin/test</originID>
@@ -45,30 +46,30 @@
       <nodalPlanes>
         <nodalPlane1>
           <strike>
-            <value>151.0894684</value>
+            <value>151.08946843475607</value>
           </strike>
           <dip>
-            <value>22.48006316</value>
+            <value>22.480063164781765</value>
           </dip>
           <rake>
-            <value>251.9768939</value>
+            <value>251.976893907524</value>
           </rake>
         </nodalPlane1>
         <nodalPlane2>
           <strike>
-            <value>350.4877799</value>
+            <value>350.48777987839406</value>
           </strike>
           <dip>
-            <value>68.67854241</value>
+            <value>68.6785424115209</value>
           </dip>
           <rake>
-            <value>-82.70401256</value>
+            <value>-82.7040125555997</value>
           </rake>
         </nodalPlane2>
       </nodalPlanes>
-      <azimuthalGap>86.22426683</azimuthalGap>
+      <azimuthalGap>86.22426683163565</azimuthalGap>
       <stationPolarityCount>16</stationPolarityCount>
-      <misfit>0.6331477449</misfit>
+      <misfit>0.6331477448705958</misfit>
       <methodID>wphase</methodID>
       <evaluationMode>automatic</evaluationMode>
       <creationInfo>
@@ -81,26 +82,26 @@
         <momentMagnitudeID>Magnitude/test</momentMagnitudeID>
         <tensor>
           <Mrr>
-            <value>-2.549736591e+18</value>
+            <value>-2.5497365906200801e+18</value>
           </Mrr>
           <Mtt>
-            <value>-5.313573767e+17</value>
+            <value>-5.313573766970089e+17</value>
           </Mtt>
           <Mpp>
-            <value>3.081093967e+18</value>
+            <value>3.0810939673170893e+18</value>
           </Mpp>
           <Mrt>
-            <value>4.780563694e+17</value>
+            <value>4.7805636937507776e+17</value>
           </Mrt>
           <Mrp>
-            <value>-3.17168916e+18</value>
+            <value>-3.1716891598093266e+18</value>
           </Mrp>
           <Mtp>
-            <value>-1.23627581e+18</value>
+            <value>-1.2362758097016248e+18</value>
           </Mtp>
         </tensor>
-        <doubleCouple>0.6456205322</doubleCouple>
-        <clvd>0.3543794678</clvd>
+        <doubleCouple>0.645620532224675</doubleCouple>
+        <clvd>0.354379467775325</clvd>
         <methodID>wphase</methodID>
         <creationInfo>
           <agencyID>GA</agencyID>

@@ -44,3 +44,6 @@ cache-keys = [
     { file = "wphase/psi/*.pyf" },
     { file = "CMakeLists.txt" },
 ]
+
+[tool.ruff]
+exclude = ["*"]

@@ -218,6 +218,30 @@ def dec50to1(tr, fast=True):
     tr.stats.starttime += ts
     return tr
 
+
+def dec100to1(tr, fast=True):
+    """
+    Decimate *tr* from 100Hz to 1Hz. If *fast* is set to
+    *True*, then the trace is decimated using :py:func:`fast_decimation`, otherwise two calls to
+    :py:meth:`obspy.core.Trace.decimate` are made with factors of 5 and 10 respectively.
+
+    :param tr: The trace to decimate.
+    :type tr: :py:class:`obspy.core.Trace`
+
+    :return: The decimated trace.
+    :rtype: :py:class:`obspy.core.Trace`
+    """
+
+    if fast:
+        tr = fast_decimation(tr, 10, filt_coef_10_10)
+        tr = fast_decimation(tr, 10, filt_coef_10_10)
+    else:
+        tr.decimate(10).decimate(10)
+    ts = -0.27 - 2.783  # XXX idk what's going on here - correct value for 100?
+    tr.stats.starttime += ts
+    return tr
+
+
 def dec1to1(tr, fast=True):
     return tr
 
@@ -227,6 +251,7 @@ decimators = {
     20.: dec20to1,
     40.: dec40to1,
     50.: dec50to1,
+    100.0: dec100to1,
 }
 
 class CannotDecimate(Exception):

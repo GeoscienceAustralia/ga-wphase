@@ -19,14 +19,15 @@ except ImportError:
 
 from wphase.psi.taup_fortran import getPtime
 import wphase.psi.seismoutils as SU
-from wphase.psi.decimate import decimateTo1Hz, CannotDecimate
+from wphase.psi.decimate import decimateTo1Hz, CannotDecimate, decimators
 
 logger = logging.getLogger(__name__)
 
+
 def build_metadata_dict(
         inv,
-        target_sampling_rates=[1., 20., 40., 50.],
-        target_channels=['BH', 'LH'],
+        target_sampling_rates=list(decimators),
+        target_channels=["BH", "HH", "LH"],
         target_locs=None):
     '''
     Builds a metadata catalog given an ObsPy inventory object.
@@ -242,9 +243,9 @@ def get_waveforms(
     st = remove_gappy_traces(st)
     logger.info('%s traces remaining after throwing out gappy ones', len(st))
 
-    # Decimating BH channels. This can be done in parallel.
+    # Decimating BH/HH channels. This can be done in parallel.
     if decimate:
-        st_B_cha_list = [tr for tr in st if tr.id.split('.')[-1][0] == 'B']
+        st_B_cha_list = [tr for tr in st if tr.id.split(".")[-1][0] in ("B", "H")]
         for tr in st_B_cha_list:
             try:
                 decimateTo1Hz(tr)

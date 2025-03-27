@@ -53,15 +53,23 @@ def build_metadata_dict(
 
     metadata = {}
     failures = []
-    def include_channel(cha):
+
+    def include_channel(cha, code):
         if target_channels is not None:
             if cha.code[:-1] not in target_channels:
+                logger.debug(f"Rejecting {code}: not in target_channels")
                 return False
         if target_sampling_rates is not None:
             if cha.sample_rate not in target_sampling_rates:
+                logger.debug(
+                    f"Rejecting {code}: {cha.sample_rate} not in target_sampling_rates"
+                )
                 return False
         if target_locs is not None:
             if cha.location_code not in target_locs:
+                logger.debug(
+                    f"Rejecting {code}: {cha.location_code} not in target_locs"
+                )
                 return False
         return True
 
@@ -73,9 +81,9 @@ def build_metadata_dict(
         for sta in net:
             for cha in sta:
                 try:
-                    if not include_channel(cha):
+                    trid = ".".join((net.code, sta.code, cha.location_code, cha.code))
+                    if not include_channel(cha, trid):
                         continue
-                    trid = '.'.join((net.code, sta.code, cha.location_code, cha.code))
                     resp = cha.response
                     paz = resp.get_paz()
 

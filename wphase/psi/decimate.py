@@ -223,7 +223,7 @@ def dec100to1(tr, fast=True):
     """
     Decimate *tr* from 100Hz to 1Hz. If *fast* is set to
     *True*, then the trace is decimated using :py:func:`fast_decimation`, otherwise two calls to
-    :py:meth:`obspy.core.Trace.decimate` are made with factors of 5 and 10 respectively.
+    :py:meth:`obspy.core.Trace.decimate` are made with a factor of 10.
 
     :param tr: The trace to decimate.
     :type tr: :py:class:`obspy.core.Trace`

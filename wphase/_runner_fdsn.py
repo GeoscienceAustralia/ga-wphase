@@ -80,7 +80,7 @@ def load_metadata(
 
             base_call = {
                 "level"    : 'response',
-                "channel"  : 'BH?',
+                "channel"  : '?H?',
                 "latitude" : eqinfo.latitude,
                 "longitude": eqinfo.longitude,
                 "minradius": dist_range[0],

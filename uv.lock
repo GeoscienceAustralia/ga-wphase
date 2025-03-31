@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.9"
 resolution-markers = [
     "python_full_version < '3.10'",
@@ -1373,7 +1374,7 @@ wheels = [
 
 [[package]]
 name = "wphase"
-version = "0.3.6"
+version = "0.3.7"
 source = { editable = "." }
 dependencies = [
     { name = "h5py" },
@@ -1418,6 +1419,7 @@ requires-dist = [
     { name = "scipy", marker = "python_full_version >= '3.12'", specifier = ">=1.11" },
     { name = "setuptools", marker = "python_full_version >= '3.12'", specifier = ">=75" },
 ]
+provides-extras = ["aws", "plotting"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "cartopy", specifier = ">=0.22" }]

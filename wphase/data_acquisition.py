@@ -19,14 +19,15 @@ except ImportError:
 
 from wphase.psi.taup_fortran import getPtime
 import wphase.psi.seismoutils as SU
-from wphase.psi.decimate import decimateTo1Hz, CannotDecimate
+from wphase.psi.decimate import decimateTo1Hz, CannotDecimate, decimators
 
 logger = logging.getLogger(__name__)
 
+
 def build_metadata_dict(
         inv,
-        target_sampling_rates=[1., 20., 40., 50.],
-        target_channels=['BH', 'LH'],
+        target_sampling_rates=list(decimators),
+        target_channels=["BH", "HH", "LH"],
         target_locs=None):
     '''
     Builds a metadata catalog given an ObsPy inventory object.
@@ -53,15 +54,23 @@ def build_metadata_dict(
 
     metadata = {}
     failures = []
-    def include_channel(cha):
+
+    def include_channel(cha, code):
         if target_channels is not None:
             if cha.code[:-1] not in target_channels:
+                logger.debug(f"Rejecting {code}: not in target_channels")
                 return False
         if target_sampling_rates is not None:
             if cha.sample_rate not in target_sampling_rates:
+                logger.debug(
+                    f"Rejecting {code}: {cha.sample_rate} not in target_sampling_rates"
+                )
                 return False
         if target_locs is not None:
             if cha.location_code not in target_locs:
+                logger.debug(
+                    f"Rejecting {code}: {cha.location_code} not in target_locs"
+                )
                 return False
         return True
 
@@ -73,9 +82,9 @@ def build_metadata_dict(
         for sta in net:
             for cha in sta:
                 try:
-                    if not include_channel(cha):
+                    trid = ".".join((net.code, sta.code, cha.location_code, cha.code))
+                    if not include_channel(cha, trid):
                         continue
-                    trid = '.'.join((net.code, sta.code, cha.location_code, cha.code))
                     resp = cha.response
                     paz = resp.get_paz()
 
@@ -234,9 +243,9 @@ def get_waveforms(
     st = remove_gappy_traces(st)
     logger.info('%s traces remaining after throwing out gappy ones', len(st))
 
-    # Decimating BH channels. This can be done in parallel.
+    # Decimating BH/HH channels. This can be done in parallel.
     if decimate:
-        st_B_cha_list = [tr for tr in st if tr.id.split('.')[-1][0] == 'B']
+        st_B_cha_list = [tr for tr in st if tr.id.split(".")[-1][0] in ("B", "H")]
         for tr in st_B_cha_list:
             try:
                 decimateTo1Hz(tr)

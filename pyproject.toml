@@ -1,6 +1,6 @@
 [project]
 name = "wphase"
-version = "0.3.6"
+version = "0.3.7"
 description = "Wphase calculations and web interface."
 authors = [
     {name = "Geoscience Australia"},
@@ -44,3 +44,6 @@ cache-keys = [
     { file = "wphase/psi/*.pyf" },
     { file = "CMakeLists.txt" },
 ]
+
+[tool.ruff]
+exclude = ["*"]

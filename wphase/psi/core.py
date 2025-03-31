@@ -4,6 +4,7 @@
 from collections import OrderedDict
 import sys, os, glob, traceback, logging
 from concurrent.futures import ProcessPoolExecutor
+from itertools import groupby
 from timeit import default_timer as timer
 from typing import Sequence
 import numpy as np
@@ -17,7 +18,7 @@ except ImportError:
 from scipy import ndimage
 from scipy.signal import detrend
 import h5py
-from obspy.core import read, Stream, UTCDateTime
+from obspy.core import read, Stream, UTCDateTime, Trace
 
 try:
     from obspy.geodetics import locations2degrees
@@ -49,6 +50,32 @@ from .exceptions import InversionError, RTdeconvError
 from .seismoutils import azimuthal_gap, ltrim, rot_12_NE
 
 logger = logging.getLogger(__name__)
+
+LOCATION_CODE_PRIORITY = ["00", "--", "", "  "]
+BAND_CODE_PRIORITY = ["L", "B", "H"]
+
+def select_best_channels(input: Stream) -> Stream:
+    """Deduplicate input data to contain at most one channel per station using the
+    priority lists defined above.
+
+    If none of the preferred location codes are available, we take what we can get.
+    If none of the preferred bands are available, we exclude the station entirely.
+    """
+    def key(tr: Trace):
+        return (tr.stats.network, tr.stats.station)
+
+    loc_score = {v: i for i, v in enumerate(LOCATION_CODE_PRIORITY)}
+    band_score = {v: i for i, v in enumerate(BAND_CODE_PRIORITY)}
+    def score(tr: Trace):
+        band = tr.stats.channel[0]
+        return (loc_score.get(tr.stats.location, 99), band_score.get(band, 99))
+
+    output = Stream()
+    for _, trs in groupby(sorted(input, key=key), key=key):
+        traces = [tr for tr in trs if tr.stats.channel[0] in BAND_CODE_PRIORITY]
+        if traces:
+            output.append(min(traces, key=score))
+    return output
 
 def wpinv(
     st: Stream,
@@ -154,12 +181,7 @@ def wpinv(
     if hypdep < 10.:
         hypdep = 10.
 
-    #In case of multiple locations we favor
-    # '00'. This may be improved if we select the one with the longer period
-    # sensor.
-    st_sel = st.select(location = '00')
-    st_sel+= st.select(location = '--')
-    st_sel+= st.select(location = '') #Check this.
+    st_sel = select_best_channels(st)
 
     # We don't really care exactly what ordering obspy chooses
     # here; we just want a deterministic ordering so we can compare runs.

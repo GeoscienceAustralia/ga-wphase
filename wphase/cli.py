@@ -44,6 +44,9 @@ wlogger.setLevel(logging.WARNING)
 wlogger.addHandler(LogRelay(level=logging.WARNING))
 logging.captureWarnings(True)
 
+class RunFailed(Exception):
+    pass
+
 class WPhase(Application):
     def __init__(self, argc, argv):
         # Log all messages to a file for S3
@@ -399,18 +402,39 @@ class WPhase(Application):
 
     def init(self):
         """
-        SC3 specific method.
+        Seiscomp application lifecycle method.
 
-        Returning False means that we do not enter the SeisComP3 run loop.
+        Normally this is used just to perform initial setup work; but since we don't
+        want to monitor messaging, just do some computation and then exit, we do
+        everything here then exit.
         """
 
         if Application.init(self) == False:
             return False
 
+        try:
+            self.run_once(output_dir=self.output, resultid=self.resultid)
+        except RunFailed:
+            # Logging in run_once is sufficient, just exit
+            sys.exit(1)
+        except Exception:
+            logger.exception("Unexpected error in WPhase.run_once")
+            sys.exit(2)
+        else:
+            sys.exit(0)
+
+
+    def run_once(self, output_dir: str, resultid: Optional[str]):
+        """Run a single w-phase inversion and send the results via seiscomp messaging
+        and email.
+
+        This has been factored out to allow custom WPhase subclasses to call it multiple
+        times if desired."""
+
         result: Optional[model.WPhaseResult] = None
 
         Logging.enableConsoleLogging(Logging.getGlobalChannel("error"))
-        wphase_failed = False
+        wphase_exception = None
 
         if self.filename is not None:
             # Output JSON was provided, so we just send it to messaging.
@@ -421,7 +445,7 @@ class WPhase(Application):
             try:
                 logger.info("Starting W-Phase.")
                 result = runwphase(
-                    output_dir=self.output,
+                    output_dir=output_dir,
                     server=self.fdsn_client,
                     eqinfo=self.eqinfo,
                     networks=self.networks,
@@ -432,9 +456,9 @@ class WPhase(Application):
                     waveforms=self.waveforms,
                     inventory=self.inventory,
                 )
-            except Exception:
+            except Exception as e:
                 logger.exception("W-Phase run failed.")
-                wphase_failed = True
+                wphase_exception = e
 
         if result is not None:
             try:
@@ -448,7 +472,7 @@ class WPhase(Application):
             except Exception:
                 logger.exception("Failed to create objects for SC3.")
             else:
-                filename = os.path.join(str(self.output), "sc3.xml")
+                filename = os.path.join(str(output_dir), "sc3.xml")
                 try:
                     # write output to file
                     writeSCML(filename, objs)
@@ -464,10 +488,10 @@ class WPhase(Application):
             try:
                 from wphase.aws import write_to_s3
                 write_to_s3(
-                    self.output,
+                    output_dir,
                     self.bucket_name,
                     self.evid,
-                    self.resultid,
+                    resultid,
                     [(self._logfile_for_s3.name, 'sc3.log')],
                     logger.error)
             except Exception as e:
@@ -480,10 +504,10 @@ class WPhase(Application):
             success = result is not None and result.MomentTensor is not None
             subject, body = self.createEmail(
                 event_id=self.evid,
-                result_id=self.resultid,
+                result_id=resultid,
                 result=result,
                 call_succeeded=success,
-                output_dir=self.output,
+                output_dir=output_dir,
             )
             send_email(
                 recipients=self.notificationemail,
@@ -502,7 +526,8 @@ class WPhase(Application):
                 tls=self.smtp_tls,
             )
 
-        sys.exit(1 if wphase_failed else 0)
+        if wphase_exception is not None:
+            raise RunFailed("W-Phase run failed: %s" % wphase_exception) from wphase_exception
 
     def createEmail(
         self,

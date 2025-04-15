@@ -335,6 +335,7 @@ class WPhase(Application):
                     latitude=origin.latitude,
                     depth=origin.depth / 1000,
                     time=origin.time,
+                    creation_time=origin.creation_info and origin.creation_info.creation_time,
                 )
                 self.triggering_origin_id = re.sub(
                     r"^smi:org.gfz-potsdam.de/geofon/",

@@ -14,8 +14,8 @@ from pydantic import BaseModel, Field
 # Sadly we have to jump through some hoops to cleanly add pydantic validators
 # to third-party types if we want it to type-check correctly:
 if TYPE_CHECKING:
-    UTCDateTime = _UTCDateTime
-    Array = np.ndarray
+    from obspy import UTCDateTime
+    from numpy import ndarray as Array
 else:
     class UTCDateTime(_UTCDateTime):
         @classmethod
@@ -110,6 +110,7 @@ class Event(Data):
     latitude: float
     longitude: float
     time: UTCDateTime
+    creation_time: Optional[UTCDateTime] = None
 
 
 class AntelopeMomentTensor(Data):

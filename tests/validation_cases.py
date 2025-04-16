@@ -11,7 +11,7 @@ from obspy.core import UTCDateTime
 
 logger = logging.getLogger("wphase.tests")
 
-DATASETS_URL = 'https://github.com/GeoscienceAustralia/ga-wphase/releases/download/v0.3/ga-wphase-test-datasets.tar.gz'
+DATASETS_URL = 'https://github.com/GeoscienceAustralia/ga-wphase/releases/download/v0.3.2/ga-wphase-test-datasets.tar.gz'
 DATA_DIR = 'test-datasets'
 TESTS_DIR = dirname(__file__)
 
@@ -65,7 +65,7 @@ def dump_case(case):
     return case
 
 def _load_cases():
-    with open(join(TESTS_DIR, "validation_cases.json")) as fh:
+    with open(join(TESTS_DIR, "validation_cases_v2.json")) as fh:
         return [parse_case(x) for x in json.load(fh)]
 
 try:
@@ -76,5 +76,5 @@ except FileNotFoundError:
 
 def add_case(case):
     cases.append(case)
-    with open(join(TESTS_DIR, "validation_cases.json"), "w") as fh:
+    with open(join(TESTS_DIR, "validation_cases_2.json"), "w") as fh:
         json.dump([dump_case(x) for x in cases], fh, indent=4)

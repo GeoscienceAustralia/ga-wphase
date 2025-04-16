@@ -13,3 +13,4 @@ tests/prof
 /CMakeFiles
 /CMakeCache.txt
 /tests/validation_cases.json
+/tests/validation_cases_v2.json

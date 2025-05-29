@@ -1,15 +1,13 @@
 """Methods to convert results to seiscomp formats."""
 from __future__ import annotations
 from contextlib import contextmanager
-from dataclasses import dataclass
 import logging
 from pathlib import Path
 from typing import List, Optional, Union
 
-
 from obspy.core import UTCDateTime
-from seiscomp3 import DataModel as DM, Core, IO
-from seiscomp3 import Logging
+from seiscomp import datamodel as DM, core, io
+import seiscomp.logging
 from wphase.psi.model import WPhaseResult
 
 logger = logging.getLogger(__name__)
@@ -32,10 +30,10 @@ def charstar(string):
     if _charstar_is_bytes is None:
         # first time we've been called - we need to detect.
         try:
-            Logging.debug(b"Detected SWIG char* type as bytes")
+            seiscomp.logging.debug(b"Detected SWIG char* type as bytes")
             _charstar_is_bytes = True
         except TypeError:
-            Logging.debug(u"Detecting SWIG char* type as unicode")
+            seiscomp.logging.debug(u"Detecting SWIG char* type as unicode")
             _charstar_is_bytes = False
     if _charstar_is_bytes:
         if isinstance(string, bytes):
@@ -52,7 +50,7 @@ def datetime_to_seiscomp(dt):
     """Convert a python or obspy UTC datetime to a seiscomp Time."""
     if isinstance(dt, UTCDateTime):
         dt = dt.datetime
-    return Core.Time(dt.year,
+    return core.Time(dt.year,
                      dt.month,
                      dt.day,
                      dt.hour,
@@ -94,13 +92,13 @@ def createObjects(
     publicid_slug: Optional[str] = None,
     triggering_origin_id: Optional[str] = None,
 ) -> SeiscompResults:
-    """Convert a WPhaseResult to seiscomp3.DataModel objects, optionally sending
+    """Convert a WPhaseResult to seiscomp.datamodel objects, optionally sending
     Notifier events to messaging.
 
     :param WPhaseResult item:
         Result of a W-Phase inversion.
     :param bool with_notifiers:
-        If true, seiscomp3.DataModel.Notifier instances will be created linking
+        If true, seiscomp.datamodel.Notifier instances will be created linking
         the FocalMechanism and derived Origin to the triggering event.
     :param str publicid_slug:
         If provided, publicIDs are built from templates using this string
@@ -109,7 +107,7 @@ def createObjects(
     :rtype: dict
     :return:
         A dictionary with keys focalMechanism, derivedOrigin, momentMagnitude
-        (mapped to seiscomp3.DataModel objects), and optionally notifiers
+        (mapped to seiscomp.datamodel objects), and optionally notifiers
         (mapped to a list of Notifiers)."""
     mtresult = item.MomentTensor
     preferredOL = item.OL3 or item.OL2
@@ -118,7 +116,7 @@ def createObjects(
 
     if item.CreationTime is None:
         # default to current time in UTC
-        time = Core.Time.GMT()
+        time = core.Time.GMT()
     else:
         time = datetime_to_seiscomp(item.CreationTime)
 
@@ -309,13 +307,13 @@ def createObjects(
 
 
 def createAndSendObjects(item, connection, **kwargs) -> SeiscompResults:
-    """Convert the given FMItem to seiscomp3.DataModel objects, send them over
+    """Convert the given FMItem to seiscomp.datamodel objects, send them over
     the given connection, and return them.
 
     :param FMItem item: W-Phase result
-    :param seiscomp3.Client.Connection connection: seiscomp messaging connection
+    :param seiscomp.client.Connection connection: seiscomp messaging connection
     :rtype: dict"""
-    # create SeiscomP3 objects from focal mechanism item
+    # create seiscomp objects from focal mechanism item
     with SCNotifierEnabled():
         ret = createObjects(item, with_notifiers=True, **kwargs)
 
@@ -334,13 +332,13 @@ def createAndSendObjects(item, connection, **kwargs) -> SeiscompResults:
 
 
 def writeSCML(filename: Union[str, Path], objects: SeiscompResults):
-    """Given seiscomp3.DataModel objects (as produced by createObjects),
+    """Given seiscomp.datamodel objects (as produced by createObjects),
     write them to an XML file.
 
     :param str filename: path to output file
     :param objects dict: same as return type of createObjects"""
-    # create SeisComP3 XML Archive used to serialize objects
-    ar = IO.XMLArchive()
+    # create seiscomp XML Archive used to serialize objects
+    ar = io.XMLArchive()
 
     # enable formatted output
     ar.setFormattedOutput(True)

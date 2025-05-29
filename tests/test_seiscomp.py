@@ -1,8 +1,8 @@
 from functools import partial
 from wphase.psi.model import WPhaseResult
 from wphase.seiscomp import createObjects, writeSCML
-from seiscomp3.Core import Time
-from seiscomp3.DataModel import (
+from seiscomp.core import Time
+from seiscomp.datamodel import (
     AUTOMATIC,
     CENTROID,
     FocalMechanism,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Runs W-Phase, sends results to seiscomp3 messaging and copies files to S3."""
+"""Runs W-Phase, sends results to seiscomp messaging and copies files to S3."""
 
 import json
 import logging
@@ -14,8 +14,8 @@ from typing import Optional
 from obspy.clients.fdsn import Client
 from obspy.core.event import Origin
 
-from seiscomp3 import DataModel as DM, Logging, IO, Core
-from seiscomp3.Client import Application
+from seiscomp.client import Application
+import seiscomp.logging
 
 from wphase import logger, runwphase, settings
 from wphase.psi import model
@@ -28,13 +28,13 @@ class LogRelay(logging.Handler):
     def emit(self, record):
         msg = self.format(record)
         if record.levelname == 'DEBUG':
-            Logging.debug(charstar(msg))
+            seiscomp.logging.debug(charstar(msg))
         elif record.levelname == 'INFO':
-            Logging.info(charstar(msg))
+            seiscomp.logging.info(charstar(msg))
         elif record.levelname == 'WARNING':
-            Logging.warning(charstar(msg))
+            seiscomp.logging.warning(charstar(msg))
         else:
-            Logging.error(charstar(msg))
+            seiscomp.logging.error(charstar(msg))
 
 # Send W-Phase logs and python warnings to seiscomp logs
 logger.setLevel(logging.DEBUG)
@@ -51,9 +51,9 @@ class WPhase(Application):
     def __init__(self, argc, argv):
         # Log all messages to a file for S3
         self._logfile_for_s3 = NamedTemporaryFile()
-        self._logger_for_s3 = Logging.FileOutput(self._logfile_for_s3.name)
+        self._logger_for_s3 = seiscomp.logging.FileOutput(self._logfile_for_s3.name)
         for level in ('notice', 'error', 'warning', 'info', 'debug'):
-            self._logger_for_s3.subscribe(Logging.getGlobalChannel(level))
+            self._logger_for_s3.subscribe(seiscomp.logging.getGlobalChannel(level))
 
         Application.__init__(self, argc, argv)
 
@@ -434,7 +434,7 @@ class WPhase(Application):
 
         result: Optional[model.WPhaseResult] = None
 
-        Logging.enableConsoleLogging(Logging.getGlobalChannel("error"))
+        seiscomp.logging.enableConsoleLogging(seiscomp.logging.getGlobalChannel("error"))
         wphase_exception = None
 
         if self.filename is not None:

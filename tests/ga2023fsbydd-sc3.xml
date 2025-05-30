@@ -108,6 +108,134 @@
           <author>GA W-phase</author>
           <creationTime>2023-03-22T17:00:00.391Z</creationTime>
         </creationInfo>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.C.GO03..BHZ" active="true" weight="1">
+          <waveformID networkCode="C" stationCode="GO03" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.IU.LCO.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="IU" stationCode="LCO" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.C1.CO03..BHZ" active="true" weight="1">
+          <waveformID networkCode="C1" stationCode="CO03" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.GT.CPUP.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="GT" stationCode="CPUP" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.G.COYC.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="G" stationCode="COYC" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.G.MPG.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="G" stationCode="MPG" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.G.FDFM.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="G" stationCode="FDFM" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.G.UNM.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="G" stationCode="UNM" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.IU.WVT.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="IU" stationCode="WVT" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.IU.ANMO.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="IU" stationCode="ANMO" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.IU.TUC.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="IU" stationCode="TUC" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.G.PPTF.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="G" stationCode="PPTF" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.IM.BOSA..BHZ" active="true" weight="1">
+          <waveformID networkCode="IM" stationCode="BOSA" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.PM.PFVI..BHZ" active="true" weight="1">
+          <waveformID networkCode="PM" stationCode="PFVI" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.G.TAM.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="G" stationCode="TAM" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.IU.PAB.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="IU" stationCode="PAB" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow/>
+          </component>
+        </stationMomentTensorContribution>
       </momentTensor>
     </focalMechanism>
   </EventParameters>

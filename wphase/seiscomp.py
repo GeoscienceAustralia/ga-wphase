@@ -282,6 +282,8 @@ def createObjects(
             if (misfit_pc := preferredOL.trace_misfits.get(tr)) is not None:
                 comp.setMisfit(misfit_pc/100)
             comp.setWeight(1)
+            if (ttw := preferredOL.trace_time_windows) and (window := ttw.get(tr)) is not None:
+                comp.setDataTimeWindow(list(window))
             cont = DM.MomentTensorStationContribution.Create()
             if publicid_slug is not None:
                 cont.setPublicID(f"MomentTensorStationContribution/{publicid_slug}.{n}.{s}.{l}.{c}")

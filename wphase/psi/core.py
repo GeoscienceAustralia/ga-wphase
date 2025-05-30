@@ -368,6 +368,7 @@ def wpinv(
     # Preparing the data:
     DIST = []
     DATA_INFO = {} #Minimum info to be able to filter the displacements afterwards
+    time_windows = {}
     for itr, trid in enumerate(trlist[:]):
         trmeta =  metadata[trid]
         trlat = trmeta['latitude']
@@ -382,6 +383,7 @@ def wpinv(
         # W-phase time window
         t1 = orig + t_p
         t2 = t1 + dist*settings.WPHASE_CUTOFF
+        time_windows[trid] = (t_p, t_p + dist*settings.WPHASE_CUTOFF)
         tr = st_sel.select(id = trid)[0]
 
         tr.data = np.array(tr.data, dtype=float)
@@ -550,6 +552,7 @@ def wpinv(
 
     trace_lengths = list(zip(trlist, trlen))
     trmisfits = list(zip(trlist, trmisfits))
+    trwindows = [(i, time_windows[i]) for i in trlist]
     result.OL2 = make_result(
         OL2Result,
         M,
@@ -562,6 +565,7 @@ def wpinv(
         synthetic_displacements=syn,
         trace_lengths=OrderedDict(trace_lengths),
         trace_misfits=OrderedDict(trmisfits),
+        trace_time_windows=OrderedDict(trwindows),
     )
 
     if len(trlen) == 0:
@@ -625,6 +629,7 @@ def wpinv(
 
     trace_lengths = list(zip(trlist, trlen))
     trmisfits = list(zip(trlist, trmisfits))
+    trwindows = [(i, time_windows[i]) for i in trlist]
 
     result.OL3 = make_result(
         OL3Result,
@@ -640,6 +645,7 @@ def wpinv(
         synthetic_displacements=syn,
         trace_lengths=OrderedDict(trace_lengths),
         trace_misfits=OrderedDict(trmisfits),
+        trace_time_windows=OrderedDict(trwindows),
         grid_search_candidates=[row[1] for row in grid_search_inputs],
         grid_search_results=grid_search_results,
     )

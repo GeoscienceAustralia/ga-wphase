@@ -72,6 +72,7 @@ class OL2Result(Data):
     used_traces: List[str]
     trace_lengths: OrderedDict[str, int]
     trace_misfits: OrderedDict[str, float]
+    trace_time_windows: Optional[OrderedDict[str, Tuple[float, float]]]
 
     moment_tensor: Optional[np.ndarray] = Field(exclude=True)
     observed_displacements: Optional[np.ndarray] = Field(exclude=True)

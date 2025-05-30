@@ -271,6 +271,35 @@ def createObjects(
     except Exception:
         pass
 
+    for tr in preferredOL.used_traces:
+        try:
+            n, s, l, c = tr.split(".")
+            wfid = DM.WaveformStreamID(n, s, l, c, "")
+            comp = DM.MomentTensorComponentContribution()
+            comp.setComponent(0)
+            comp.setActive(True)
+            comp.setPhaseCode("W")
+            if (misfit_pc := preferredOL.trace_misfits.get(tr)) is not None:
+                comp.setMisfit(misfit_pc/100)
+            comp.setWeight(1)
+            cont = DM.MomentTensorStationContribution.Create()
+            if publicid_slug is not None:
+                cont.setPublicID(f"MomentTensorStationContribution/{publicid_slug}.{n}.{s}.{l}.{c}")
+            cont.setActive(True)
+            cont.setWeight(1)
+            cont.setWaveformID(wfid)
+            cont.add(comp)
+        except Exception:
+            logger.exception(
+                "Error constructing momentTensorStationContribution for "
+                "%s, omitting this station",
+                tr
+            )
+            assert False
+        else:
+            mt.add(cont)
+
+
     # Since we don't want to overwrite the event data itself, but we do
     # want to explicitly associate our data to the correct event, we have
     # to manually create Notifiers for these associations.

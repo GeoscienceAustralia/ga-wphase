@@ -44,11 +44,18 @@ from .model import (
     OL3Result,
     Event,
     TimeDelayMisfits,
+    ScreeningStage,
 )
 from .exceptions import InversionError, RTdeconvError
 from .seismoutils import azimuthal_gap, ltrim, rot_12_NE
 
 logger = logging.getLogger(__name__)
+
+ 
+def screened(name, before, after):
+    return ScreeningStage(name=name, station_results={
+        trid: (trid in after) for trid in before
+    })
 
 def wpinv(
     st: Stream,
@@ -164,6 +171,8 @@ def wpinv(
     # We don't really care exactly what ordering obspy chooses
     # here; we just want a deterministic ordering so we can compare runs.
     st_sel.sort()
+
+    original_trids = sorted(tr.id for tr in st_sel)
 
     #st_sel = st_sel.select(component = 'Z')
     #We also want to select stations with one location code which is not the
@@ -299,6 +308,8 @@ def wpinv(
     AZI = [AZI[i] for i in sorted_indices]
     DIST = [DIST[i] for i in sorted_indices]
 
+    preproc_stage = screened("preprocessing", original_trids, trlist_pre)
+
     # Median rejection
     median_p2p = np.nanmedian(tr_p2p)
     mrcoeff = settings.MEDIAN_REJECTION_COEFF
@@ -306,11 +317,11 @@ def wpinv(
     accepted_traces = []
     for i, (trid, p2p) in enumerate(zip(trlist_pre, tr_p2p)):
         if np.isnan(p2p):
-            logger.warning("P2P Amp for %s is NaN! Excluding.", trid)
+            logger.warning("P2P Amp for %s is NaN! Excluding from preliminary mag.", trid)
         elif p2p > p2pmax:
-            logger.info("P2P Amp for %s is too big (%.2e > %.2e). Excluding.", trid, p2p, p2pmax)
+            logger.info("P2P Amp for %s is too big (%.2e > %.2e). Excluding from preliminary mag.", trid, p2p, p2pmax)
         elif p2p < p2pmin:
-            logger.info("P2P Amp for %s is too small (%.2e < %.2e). Excluding.", trid, p2p, p2pmin)
+            logger.info("P2P Amp for %s is too small (%.2e < %.2e). Excluding from preliminary mag.", trid, p2p, p2pmin)
         else:
             accepted_traces.append(i)
 
@@ -348,7 +359,7 @@ def wpinv(
         nstations=len(accepted_traces),
         magnitude=round(pre_wp_mag, 1),
     )
-    result = WPhaseResult(OL1=ol1, Event=event)
+    result = WPhaseResult(OL1=ol1, Event=event, ScreeningStages=[preproc_stage])
     if OL == 1:
         return result
     #############  Output Level 2    #######################################
@@ -378,6 +389,7 @@ def wpinv(
     DIST = []
     DATA_INFO = {} #Minimum info to be able to filter the displacements afterwards
     time_windows = {}
+    original_trids = sorted(trlist)
     for itr, trid in enumerate(trlist[:]):
         trmeta =  metadata[trid]
         trlat = trmeta['latitude']
@@ -457,6 +469,8 @@ def wpinv(
     tr_p2p = [tr_p2p[i] for i in sorted_indices]
     DIST = [DIST[i] for i in sorted_indices]
 
+    result.ScreeningStages.append(screened("deconvolution", original_trids, trlist))
+
     # Rejecting outliers:
     observed_displacements = np.array([]) # observed displacements vector.
     trlen = [] # A list with the length of each station data.
@@ -480,6 +494,7 @@ def wpinv(
             tr = st_sel.select(id = trlist[i])[0]
             observed_displacements =  np.append(observed_displacements, tr.data[:],0)
             trlen.append(len(tr))
+    result.ScreeningStages.append(screened("p2p_median_rejection", trlist, trlist2))
     trlist = trlist2[:]
 
     logger.info('number of traces for OL2: %d', len(trlist))
@@ -538,6 +553,7 @@ def wpinv(
     # Remove bad traces
     for tol in settings.MISFIT_TOL_SEQUENCE:
         # Make sure there are enough channels
+        oldtrlist = list(trlist)
         GFmatrix, observed_displacements, trlist, trlen = remove_individual_traces(
             tol,
             M,
@@ -545,6 +561,7 @@ def wpinv(
             observed_displacements,
             trlist,
             trlen)
+        result.ScreeningStages.append(screened(f"misfit_rejection_{int(tol)}", oldtrlist, trlist))
 
         if len(trlist) < settings.MINIMUM_FITTING_CHANNELS:
             msg = "Only {} channels with possibly acceptable fits. Aborting.".format(len(trlist))

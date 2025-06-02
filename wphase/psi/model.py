@@ -5,7 +5,7 @@ follow a fixed schema to work with other GA systems, so we're kinda stuck with
 it."""
 
 
-from typing import List, Optional, OrderedDict, Tuple, TYPE_CHECKING
+from typing import Dict, List, Optional, OrderedDict, Tuple, TYPE_CHECKING
 
 import numpy as np
 from obspy import UTCDateTime as _UTCDateTime
@@ -49,6 +49,11 @@ class OL1Result(Data):
     used_traces: List[str]
 
     preliminary_calc_details: Optional[dict] = Field(exclude=True)
+
+
+class ScreeningStage(Data):
+    name: str
+    station_results: Dict[str, bool]
 
 
 class OL2Result(Data):
@@ -193,6 +198,8 @@ class WPhaseResult(Data):
     DataSource: Optional[str] = None
     HostName: Optional[str] = None
     CreationTime: Optional[UTCDateTime] = None
+
+    ScreeningStages: List[ScreeningStage] = []
 
     def add_warning(self, warning):
         self.Warnings.append(str(warning))

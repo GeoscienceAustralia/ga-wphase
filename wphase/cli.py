@@ -66,6 +66,9 @@ class WPhase(Application):
         self.fdsn_client = None
         self.networks = 'ALL'
         self.region = 'not specified'
+        self.locs = '00,'
+        self.accept_any_loc = False
+        self.bands = 'L,B'
         self.evid = None
         self.resultid = None
         self.notificationemail = None
@@ -180,6 +183,19 @@ class WPhase(Application):
             "Input",
             "networks",
             "A comma separated list of networks to use.")
+        self.commandline().addStringOption(
+            "Input",
+            "bands",
+            "Ordered list of SEED bands to accept (most preferred first), comma-separated")
+        self.commandline().addStringOption(
+            "Input",
+            "locs",
+            "Ordered list of SEED location codes to accept (most preferred first), comma-separated")
+        self.commandline().addOption(
+            "Input",
+            "accept-any-loc",
+            "Accept any SEED location if a preferred one is not available for a station.")
+
         self.commandline().addStringOption(
             "Input",
             "region",
@@ -352,6 +368,9 @@ class WPhase(Application):
             getter('outputs', 'output')
             getter('networks')
             getter('region')
+            getter('bands', 'bands')
+            getter('locs', 'locs')
+            getflag('accept-any-loc', 'accept_any_loc')
             getter('resultid')
             getter('notificationemail')
             getter('emailmethod', 'email_method')
@@ -456,6 +475,9 @@ class WPhase(Application):
                     save_inventory=self.save_inventory,
                     waveforms=self.waveforms,
                     inventory=self.inventory,
+                    bands=self.bands.split(","),
+                    locs=self.locs.split(","),
+                    accept_any_loc=self.accept_any_loc,
                 )
             except Exception as e:
                 logger.exception("W-Phase run failed.")

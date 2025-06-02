@@ -170,6 +170,9 @@ def runwphase(
         raise_errors=False,
         save_waveforms=None,
         save_inventory=None,
+        bands=["L", "B"],
+        locs=["00", ""],
+        accept_any_loc=False,
         **kwargs) -> WPhaseResult:
 
     """
@@ -255,6 +258,9 @@ def runwphase(
                         meta_t_p,
                         eqinfo,
                         greens_functions_dir,
+                        bands = bands,
+                        locs = locs,
+                        accept_any_loc = accept_any_loc,
                         processes = n_workers_in_pool,
                         OL = processing_level)
             except InversionError as e:

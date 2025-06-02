@@ -6,7 +6,7 @@ import sys, os, glob, traceback, logging
 from concurrent.futures import ProcessPoolExecutor
 from itertools import groupby
 from timeit import default_timer as timer
-from typing import Sequence
+from typing import List, Sequence
 import numpy as np
 from numpy.linalg import lstsq
 from scipy.interpolate import interp1d
@@ -52,9 +52,8 @@ from .seismoutils import azimuthal_gap, ltrim, rot_12_NE
 logger = logging.getLogger(__name__)
 
 LOCATION_CODE_PRIORITY = ["00", "--", "", "  "]
-BAND_CODE_PRIORITY = ["L", "B", "H"]
 
-def select_best_channels(input: Stream) -> Stream:
+def select_best_channels(input: Stream, bands: List[str], locs: List[str], accept_any_loc: bool = False) -> Stream:
     """Deduplicate input data to contain at most one channel per station using the
     priority lists defined above.
 
@@ -64,15 +63,15 @@ def select_best_channels(input: Stream) -> Stream:
     def key(tr: Trace):
         return (tr.stats.network, tr.stats.station)
 
-    loc_score = {v: i for i, v in enumerate(LOCATION_CODE_PRIORITY)}
-    band_score = {v: i for i, v in enumerate(BAND_CODE_PRIORITY)}
+    loc_score = {v: i for i, v in enumerate(locs)}
+    band_score = {v: i for i, v in enumerate(bands)}
     def score(tr: Trace):
         band = tr.stats.channel[0]
         return (loc_score.get(tr.stats.location, 99), band_score.get(band, 99))
 
     output = Stream()
     for _, trs in groupby(sorted(input, key=key), key=key):
-        traces = [tr for tr in trs if tr.stats.channel[0] in BAND_CODE_PRIORITY]
+        traces = [tr for tr in trs if tr.stats.channel[0] in bands and tr.stats.location in locs]
         if traces:
             output.append(min(traces, key=score))
     return output
@@ -82,6 +81,9 @@ def wpinv(
     metadata: dict,
     event: Event,
     gfdir: str,
+    bands: List[str],
+    locs: List[str],
+    accept_any_loc: bool,
     OL: int = 1,
     processes: int = None,
 ):
@@ -181,7 +183,7 @@ def wpinv(
     if hypdep < 10.:
         hypdep = 10.
 
-    st_sel = select_best_channels(st)
+    st_sel = select_best_channels(st, bands=bands, locs=locs, accept_any_loc=accept_any_loc)
 
     # We don't really care exactly what ordering obspy chooses
     # here; we just want a deterministic ordering so we can compare runs.

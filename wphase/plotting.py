@@ -115,6 +115,57 @@ def plot_grid_search(
     fig.text(.5, -.05, grid_legend, horizontalalignment='center')
     fig.savefig(filename, bbox_inches='tight')
 
+def plot_screening_stage(location, df, mt=None, filename=None, fig=None, title=""):
+    """Plot a map showing the stations in a screening stage."""
+    from cartopy import crs
+    from cartopy.feature import NaturalEarthFeature
+
+    (elat, elon) = location
+    if not fig:
+        fig = make_figure(figsize=(12,12))
+        fig.set_facecolor("white")
+
+    proj = crs.Orthographic(central_longitude=elon, central_latitude=elat)
+    coords = crs.PlateCarree()
+    ax = fig.add_subplot(111, projection=proj)
+    ax.set_global()
+
+    ax.coastlines(resolution='110m')
+    land = NaturalEarthFeature('physical', 'land', '110m')
+    ocean = NaturalEarthFeature('physical', 'ocean', '110m')
+    ax.add_feature(land, facecolor='#FF9900')
+    ax.add_feature(ocean, facecolor='aqua')
+    ax.gridlines(crs=coords, draw_labels=False,
+                 color='grey', linestyle=(0, [5,5]), linewidth=0.4)
+
+    if title:
+        ax.set_title(title)
+    ax.scatter(df[df.passed].lon, df[df.passed].lat, transform=coords,
+               s=60, c="green", marker='o', edgecolors='none', zorder=10)
+    ax.scatter(df[~df.passed].lon, df[~df.passed].lat, transform=coords,
+               s=60, c="red", marker='o', edgecolors='none', zorder=10)
+    for row in df.itertuples():
+        ax.annotate(
+            row.station,
+            xy=(row.lon, row.lat),
+            xycoords=coords._as_mpl_transform(ax),
+            ha="left",
+            va="top",
+            color="black",
+        )
+
+    if mt is not None:
+        bball = beach(mt, xy=(0,0), linewidth=1, facecolor='r', zorder=10000,
+                      width=8e5)
+        ax.add_collection(bball)
+    else:
+        logger.warning("No MT provided; screening map will have no beachball")
+        ax.plot(elon, elat, 'y*', markersize=40, transform=coords)
+
+    if filename:
+        fig.savefig(filename, dpi=100, transparent=False, bbox_inches='tight')
+        logger.info("Wrote %s successfully", filename)
+
 def plot_station_coverage(location, lats, lons, mt=None, filename=None, fig=None):
     """Plot a map showing the stations used in a W-Phase solution."""
 
@@ -140,7 +191,6 @@ def plot_station_coverage(location, lats, lons, mt=None, filename=None, fig=None
 
     from warnings import warn
     if mt is not None:
-        projected_xy = proj.transform_point(elon, elat, coords)
         bball = beach(mt, xy=(0,0), linewidth=1, facecolor='r', zorder=10000,
                       width=8e5)
         ax.add_collection(bball)

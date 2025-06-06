@@ -19,6 +19,7 @@ dependencies = [
     "setuptools>=75; python_full_version >= '3.12'",
     "scipy>=0.16.0,<1.11; python_full_version < '3.12'",
     "scipy>=1.11; python_full_version >= '3.12'",
+    "pandas>=2.2.3",
 ]
 requires-python = ">=3.9"
 readme = "README.md"

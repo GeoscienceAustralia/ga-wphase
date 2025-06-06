@@ -2,6 +2,7 @@
 import os
 import logging
 import numpy as np
+import pandas as pd
 from typing import Optional
 from collections import defaultdict
 from traceback import format_exc
@@ -25,6 +26,7 @@ from wphase.psi.seismoutils import get_azimuths, azimuthal_gap
 from wphase.plotting import (
     plot_grid_search,
     plot_preliminary_fit,
+    plot_screening_stage,
     plot_station_coverage,
     plot_waveforms,
 )
@@ -363,7 +365,31 @@ def post_process_wpinv(
                 mt=MT,
                 filename=stationDistPrefix + '.png')
         except Exception:
-            wphase_output.add_warning("Failed to create station distribution plot. {}".format(format_exc()))
+            output.add_warning("Failed to create station distribution plot. {}".format(format_exc()))
+
+    if make_maps:
+        for i, stage in enumerate(output.ScreeningStages):
+            outfile = f"{working_dir}/stage{i:02d}_{stage.name}.png"
+            logger.info(f"Creating screening map {outfile}...")
+            def station_row(pair):
+                trid, passed = pair
+                try:
+                    return {
+                        "lat": metadata[trid]['latitude'],
+                        "lon": metadata[trid]['longitude'],
+                        "station": trid.rsplit(".", 2)[0],
+                        "passed": passed,
+                    }
+                except Exception:
+                    return None
+            rows = map(station_row, stage.station_results.items())
+            plot_screening_stage(
+                (eqinfo.latitude, eqinfo.longitude),
+                pd.DataFrame.from_records([row for row in rows if row]),
+                mt=stage.mt,
+                filename=outfile,
+                title=stage.info or stage.name,
+            )
 
 
 def decomposeMT(M):

@@ -51,11 +51,13 @@ from .seismoutils import azimuthal_gap, ltrim, rot_12_NE
 
 logger = logging.getLogger(__name__)
 
- 
-def screened(name, before, after):
+def screened(name, before, after, **kw):
     return ScreeningStage(name=name, station_results={
         trid: (trid in after) for trid in before
-    })
+    }, **kw)
+
+def screen(stage: str, trid: str, passed: bool, info: str = ""):
+    logger.warning(f"SCREEN {stage},{trid},{passed},{info!r}")
 
 def wpinv(
     st: Stream,
@@ -203,7 +205,12 @@ def wpinv(
     # Instrument deconvolution and bandpass filtering:
     i = 0
     for tr in st_sel_prem_mag:
-        trmeta =  metadata[tr.id]
+        try:
+            trmeta =  metadata[tr.id]
+        except KeyError:
+            screen("preprocessing", tr.id, False, "No inventory")
+            trlist.remove(tr.id)
+            continue
         trlat = trmeta['latitude']
         trlon = trmeta['longitude']
         tr.data = np.array(tr.data, dtype=float)
@@ -234,7 +241,7 @@ def wpinv(
         elif trmeta['transfer_function'] == "A":
             AmpfromPAZ  = Vpaz2freq(trmeta,freq)
         else:
-            logger.warning("Unknown transfer function. Skipping %s", tr.id)
+            screen("preprocessing", tr.id, False, "Unknown transfer function")
             trlist.remove(tr.id)
             continue
 
@@ -243,7 +250,7 @@ def wpinv(
             trmeta['sensitivity'], freq, AmpfromPAZ
         )
         if response_coefficients is None:
-            logger.warning("Impossible to get Coeff. Skipping %s", tr.id)
+            screen("preprocessing", tr.id, False, "Impossible to get response coefficients")
             trlist.remove(tr.id)
             continue
         else:
@@ -257,7 +264,7 @@ def wpinv(
                 / np.linalg.norm(AmpfromPAZ)
 
         if misfit > settings.RESPONSE_MISFIT_TOL:
-            logger.warning('Bad fitting for response (misfit=%e). Skipping %s', misfit, tr.id)
+            screen("preprocessing", tr.id, False, f"Bad fitting for response (misfit={misfit})")
             continue
 
         # tr.data will cointain the deconvolved and filtered displacements.
@@ -276,17 +283,18 @@ def wpinv(
                 get_coef=True)
 
         except RTdeconvError as e:
-            logger.warning("Error deconvolving trace %s: %s", tr.id, str(e))
+            screen("preprocessing", tr.id, False, f"Error deconvolving: {e}")
             trlist.remove(tr.id)
             continue
 
         # trim to the Wphase time window
         tr.trim(t1,t2)
         if len(tr)== 0:
-            logger.warning("Empty trace. Skipping %s", tr.id)
+            screen("preprocessing", tr.id, False, "Empty trace")
             trlist.remove(tr.id)
             continue
 
+        screen("preprocessing", tr.id, True)
         trlist_pre.append(tr.id)
         tr_p2p.append(tr[:].max()-tr[:].min())
         AZI.append(azi)
@@ -414,7 +422,7 @@ def wpinv(
         elif tf == "A":
             AmpfromPAZ  = Vpaz2freq(trmeta,freq)
         else:
-            logger.warning("%s: Unknown transfer function %s. Skipping this trace", tr.id, tf)
+            screen(f"Unknown transfer function {tf}", tr.id, False, "Empty trace")
             trlist.remove(tr.id)
             continue
 
@@ -422,7 +430,7 @@ def wpinv(
             trmeta['sensitivity'], freq, AmpfromPAZ
         )
         if response_coefficients is None:
-            logger.warning("%s: Could not fit instrument response. Skipping this trace", tr.id)
+            screen("Could not fit instrument response.", tr.id, False, "Empty trace")
             trlist.remove(tr.id)
             continue
         else:
@@ -441,19 +449,20 @@ def wpinv(
                 get_coef = True)
 
         except RTdeconvError as e:
-            logger.warning("%s: Skipping due to error in deconvolution: %s", tr.id, str(e))
+            screen("deconvolution", tr.id, False, f"Skipping due to error in deconvolution: {e}")
             trlist.remove(tr.id)
             continue
 
         #Check length of the trace:
         tr.trim(t1, t2)
         if len(tr) == 0:
-            logger.warning("%s: Trace is empty. Skipping this trace", tr.id)
+            screen("deconvolution", tr.id, False, "Empty trace")
             trlist.remove(tr.id)
             continue
         tr_p2p.append(tr[:].max() - tr[:].min())
 
         DIST.append(dist)
+        screen("deconvolution", tr.id, True)
 
     logger.info(f"OL2: {len(trlist)} traces remain after deconvolution and filtering")
 
@@ -482,19 +491,22 @@ def wpinv(
         if (amp > median_AMP*mrcoeff[1]
         or amp < median_AMP*mrcoeff[0]):
             trlist2.remove(trlist[i])
-            logger.warning("%s: Amplitude is %.2fx the median, which is "
-                           "outside our acceptable range of [%.2f, %.2f]. "
-                           "Rejecting this trace.",
-                           trlist[i],
-                           amp/median_AMP,
-                           mrcoeff[0],
-                           mrcoeff[1])
+            screen(
+                "p2p_median_rejection", trlist[i], False,
+                "Amplitude is %.2fx the median, which is "
+                    "outside our acceptable range of [%.2f, %.2f]. " % (
+                        amp/median_AMP,
+                        mrcoeff[0],
+                        mrcoeff[1])
+            )
 
         else:
             tr = st_sel.select(id = trlist[i])[0]
             observed_displacements =  np.append(observed_displacements, tr.data[:],0)
             trlen.append(len(tr))
-    result.ScreeningStages.append(screened("p2p_median_rejection", trlist, trlist2))
+            screen("p2p_median_rejection", trlist[i], True)
+    info = "P2P Median Rejection; range=[%.2f, %.2f]" % (mrcoeff[0]*median_AMP, mrcoeff[1]*median_AMP)
+    result.ScreeningStages.append(screened("p2p_median_rejection", trlist, trlist2, info=info))
     trlist = trlist2[:]
 
     logger.info('number of traces for OL2: %d', len(trlist))
@@ -561,12 +573,13 @@ def wpinv(
             observed_displacements,
             trlist,
             trlen)
-        result.ScreeningStages.append(screened(f"misfit_rejection_{int(tol)}", oldtrlist, trlist))
+        result.ScreeningStages.append(screened(f"misfit_rejection_{int(tol)}", oldtrlist, trlist, mt=list(M)))
 
         if len(trlist) < settings.MINIMUM_FITTING_CHANNELS:
             msg = "Only {} channels with possibly acceptable fits. Aborting.".format(len(trlist))
-            logger.error(msg)
-            raise InversionError(msg)
+            result.add_warning(msg)
+            return result
+            #raise InversionError(msg)
 
         M, misfit, trmisfits, GFmatrix = core_inversion(
             t_d,
@@ -1274,6 +1287,7 @@ def remove_individual_traces(tol, M, GFmatrix, observed_displacements,
             GFmatrix_fix = np.append(GFmatrix_fix, GFmatrix[n1:n2,:], axis=0)
             trlist_fix.append(trid)
             trlen_fix.append(trlen[i])
+        screen(f"misfit_rejection_{int(tol)}", trid, misfit <= tol, str(misfit))
 
     # build the result
     GFmatrix = GFmatrix_fix[1:,:]

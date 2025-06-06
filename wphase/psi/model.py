@@ -54,6 +54,8 @@ class OL1Result(Data):
 class ScreeningStage(Data):
     name: str
     station_results: Dict[str, bool]
+    info: str = ""
+    mt: Optional[List[float]] = None
 
 
 class OL2Result(Data):

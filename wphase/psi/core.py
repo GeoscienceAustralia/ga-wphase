@@ -284,8 +284,16 @@ def wpinv(
         DIST = np.append(DIST, dist)
         i += 1
 
+
+    logger.info(f"{len(trlist_pre)} traces remain after deconvolution and filtering")
+
     # Sorting the IDs according to their distance to the source:
     sorted_indices = np.argsort(DIST)
+    if settings.DEDUPLICATE_STATIONS:
+        # Deduplicate on station ID:
+        station_to_index = {trid.split(".")[1]: i for i, trid in enumerate(trlist_pre)}
+        sorted_indices = [i for i in sorted_indices if i in station_to_index.values()]
+        logger.info(f"{len(sorted_indices)} traces remain after deduplicating stations")
     trlist_pre = [trlist_pre[i] for i in sorted_indices]
     tr_p2p = [tr_p2p[i] for i in sorted_indices]
     AZI = [AZI[i] for i in sorted_indices]

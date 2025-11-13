@@ -49,6 +49,11 @@ class WPhaseSettings(BaseSettings):
     PROFILE: bool = False
     """Whether performance profiling should be enabled"""
 
+    DEDUPLICATE_STATIONS: bool = True
+    """If true, traces will be deduplicated based on station ID alone after the initial
+    QC. E.g. if both AU.WR5 and IM.WR5 data is present and passes quality checks, only
+    one of the two will be kept."""
+
     AMPLITUDE_REGULARIZATION: float = 0.2
     """Strength of regularization in preliminary magnitude calculation.
 

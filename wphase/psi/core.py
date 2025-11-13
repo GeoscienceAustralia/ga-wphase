@@ -284,8 +284,16 @@ def wpinv(
         DIST = np.append(DIST, dist)
         i += 1
 
+
+    logger.info(f"{len(trlist_pre)} traces remain after deconvolution and filtering")
+
     # Sorting the IDs according to their distance to the source:
     sorted_indices = np.argsort(DIST)
+    if settings.DEDUPLICATE_STATIONS:
+        # Deduplicate on station ID:
+        station_to_index = {trid.split(".")[1]: i for i, trid in enumerate(trlist_pre)}
+        sorted_indices = [i for i in sorted_indices if i in station_to_index.values()]
+        logger.info(f"{len(sorted_indices)} traces remain after deduplicating stations")
     trlist_pre = [trlist_pre[i] for i in sorted_indices]
     tr_p2p = [tr_p2p[i] for i in sorted_indices]
     AZI = [AZI[i] for i in sorted_indices]
@@ -368,6 +376,7 @@ def wpinv(
     # Preparing the data:
     DIST = []
     DATA_INFO = {} #Minimum info to be able to filter the displacements afterwards
+    time_windows = {}
     for itr, trid in enumerate(trlist[:]):
         trmeta =  metadata[trid]
         trlat = trmeta['latitude']
@@ -382,6 +391,7 @@ def wpinv(
         # W-phase time window
         t1 = orig + t_p
         t2 = t1 + dist*settings.WPHASE_CUTOFF
+        time_windows[trid] = (t_p, t_p + dist*settings.WPHASE_CUTOFF)
         tr = st_sel.select(id = trid)[0]
 
         tr.data = np.array(tr.data, dtype=float)
@@ -550,6 +560,7 @@ def wpinv(
 
     trace_lengths = list(zip(trlist, trlen))
     trmisfits = list(zip(trlist, trmisfits))
+    trwindows = [(i, time_windows[i]) for i in trlist]
     result.OL2 = make_result(
         OL2Result,
         M,
@@ -562,6 +573,7 @@ def wpinv(
         synthetic_displacements=syn,
         trace_lengths=OrderedDict(trace_lengths),
         trace_misfits=OrderedDict(trmisfits),
+        trace_time_windows=OrderedDict(trwindows),
     )
 
     if len(trlen) == 0:
@@ -625,6 +637,7 @@ def wpinv(
 
     trace_lengths = list(zip(trlist, trlen))
     trmisfits = list(zip(trlist, trmisfits))
+    trwindows = [(i, time_windows[i]) for i in trlist]
 
     result.OL3 = make_result(
         OL3Result,
@@ -640,6 +653,7 @@ def wpinv(
         synthetic_displacements=syn,
         trace_lengths=OrderedDict(trace_lengths),
         trace_misfits=OrderedDict(trmisfits),
+        trace_time_windows=OrderedDict(trwindows),
         grid_search_candidates=[row[1] for row in grid_search_inputs],
         grid_search_results=grid_search_results,
     )

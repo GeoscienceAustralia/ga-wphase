@@ -1,6 +1,6 @@
 [project]
 name = "wphase"
-version = "0.3.9post1"
+version = "0.3.11"
 description = "Wphase calculations and web interface."
 authors = [
     {name = "Geoscience Australia"},

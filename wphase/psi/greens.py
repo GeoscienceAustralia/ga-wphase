@@ -1,8 +1,10 @@
 """Greens function data source."""
 import logging
+import re
 import os.path
 
 from functools import lru_cache
+from pathlib import Path
 
 import h5py
 import numpy as np
@@ -202,3 +204,40 @@ def GFMTtransform(azimuth, wf_component):
 # SelectN => PP, RR, RT, TT
 # SelectE => RP, TP
 # SelectZ => PP, RR, RT, TT
+
+
+sac_pattern = re.compile(r"(\w+)\.(\d+)\.(\w+)\.(\w+).SAC")
+
+
+def hdf5_to_dir(input_file: Path, output_directory: Path):
+    """Convert a HDF5 greens function database to a directory tree containing SAC files
+
+    Parameters
+    ----------
+    input_file : Path
+        Path to existing hdf5 database
+        
+    output_directory : Path
+        Path to a new directory where the SAC tree will be written
+    """
+    with h5py.File(str(input_file), mode="r") as f:
+        for d1, g1 in f.items():
+            for d2, g2 in g1.items():
+                for d3, dataset in g2.items():
+                    net, sta, loc, cha = sac_pattern.match(d3).groups()
+
+                    trace = obspy.Trace(
+                        data=dataset[...],
+                        header=dict(
+                            network=net,
+                            station=sta,
+                            location=loc,
+                            channel=cha,
+                            sampling_rate=1,
+                        ),
+                    )
+
+                    outpath: Path = output_directory / d1 / d2
+                    outpath.mkdir(parents=True, exist_ok=True)
+                    outfile = outpath / d3
+                    trace.write(str(outfile), format="SAC")

@@ -3,21 +3,21 @@
   <EventParameters>
     <origin publicID="Origin/test">
       <time>
-        <value>2023-03-22T16:00:29.391Z</value>
+        <value>2023-03-22T16:00:28.0000Z</value>
       </time>
       <latitude>
-        <value>-23.21291809</value>
+        <value>-23.21</value>
       </latitude>
       <longitude>
-        <value>-66.23518829</value>
+        <value>-66.24</value>
       </longitude>
       <depth>
-        <value>170.5</value>
+        <value>180.5</value>
       </depth>
       <methodID>wphase</methodID>
       <quality>
-        <usedPhaseCount>16</usedPhaseCount>
-        <usedStationCount>16</usedStationCount>
+        <usedPhaseCount>14</usedPhaseCount>
+        <usedStationCount>14</usedStationCount>
       </quality>
       <type>centroid</type>
       <evaluationMode>automatic</evaluationMode>
@@ -25,20 +25,20 @@
       <creationInfo>
         <agencyID>GA</agencyID>
         <author>GA W-phase</author>
-        <creationTime>2023-03-22T17:00:00.391Z</creationTime>
+        <creationTime>2025-05-30T01:50:02.546336Z</creationTime>
       </creationInfo>
       <magnitude publicID="Magnitude/test">
         <magnitude>
-          <value>6.366682797749126</value>
+          <value>6.366365483351839</value>
         </magnitude>
         <type>Mww</type>
         <originID>Origin/test</originID>
         <methodID>wphase</methodID>
-        <stationCount>16</stationCount>
+        <stationCount>14</stationCount>
         <creationInfo>
           <agencyID>GA</agencyID>
           <author>GA W-phase</author>
-          <creationTime>2023-03-22T17:00:00.391Z</creationTime>
+          <creationTime>2025-05-30T01:50:02.546336Z</creationTime>
         </creationInfo>
       </magnitude>
     </origin>
@@ -46,68 +46,194 @@
       <nodalPlanes>
         <nodalPlane1>
           <strike>
-            <value>151.08946843475607</value>
+            <value>135.07556307159749</value>
           </strike>
           <dip>
-            <value>22.480063164781765</value>
+            <value>21.745723175136163</value>
           </dip>
           <rake>
-            <value>251.976893907524</value>
+            <value>234.37008548858756</value>
           </rake>
         </nodalPlane1>
         <nodalPlane2>
           <strike>
-            <value>350.48777987839406</value>
+            <value>352.73045838178314</value>
           </strike>
           <dip>
-            <value>68.6785424115209</value>
+            <value>72.47442266045057</value>
           </dip>
           <rake>
-            <value>-82.7040125555997</value>
+            <value>-76.91874436578142</value>
           </rake>
         </nodalPlane2>
       </nodalPlanes>
-      <azimuthalGap>86.22426683163565</azimuthalGap>
-      <stationPolarityCount>16</stationPolarityCount>
-      <misfit>0.6331477448705958</misfit>
+      <azimuthalGap>125.17728313975812</azimuthalGap>
+      <stationPolarityCount>14</stationPolarityCount>
+      <misfit>0.617510103714421</misfit>
       <methodID>wphase</methodID>
       <evaluationMode>automatic</evaluationMode>
       <creationInfo>
         <agencyID>GA</agencyID>
         <author>GA W-phase</author>
-        <creationTime>2023-03-22T17:00:00.391Z</creationTime>
+        <creationTime>2025-05-30T01:50:02.546336Z</creationTime>
       </creationInfo>
       <momentTensor publicID="MomentTensor/test">
         <derivedOriginID>Origin/test</derivedOriginID>
         <momentMagnitudeID>Magnitude/test</momentMagnitudeID>
         <tensor>
           <Mrr>
-            <value>-2.5497365906200801e+18</value>
+            <value>-2.260546149116983e+18</value>
           </Mrr>
           <Mtt>
-            <value>-5.313573766970089e+17</value>
+            <value>-1.7350715031848083e+17</value>
           </Mtt>
           <Mpp>
-            <value>3.0810939673170893e+18</value>
+            <value>2.4340532994354637e+18</value>
           </Mpp>
           <Mrt>
-            <value>4.7805636937507776e+17</value>
+            <value>3.0849956398608704e+17</value>
           </Mrt>
           <Mrp>
-            <value>-3.1716891598093266e+18</value>
+            <value>-3.51788528222095e+18</value>
           </Mrp>
           <Mtp>
-            <value>-1.2362758097016248e+18</value>
+            <value>-1.3813296033594668e+18</value>
           </Mtp>
         </tensor>
-        <doubleCouple>0.645620532224675</doubleCouple>
-        <clvd>0.354379467775325</clvd>
+        <doubleCouple>0.7793636515680177</doubleCouple>
+        <clvd>0.2206363484319824</clvd>
         <methodID>wphase</methodID>
         <creationInfo>
           <agencyID>GA</agencyID>
           <author>GA W-phase</author>
-          <creationTime>2023-03-22T17:00:00.391Z</creationTime>
+          <creationTime>2025-05-30T01:50:02.546336Z</creationTime>
         </creationInfo>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.C.GO03..BHZ" active="true" weight="1">
+          <waveformID networkCode="C" stationCode="GO03" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>78.97189331054688 160.06117465596975</dataTimeWindow>
+            <misfit>0.8713085041263717</misfit>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.IU.LCO.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="IU" stationCode="LCO" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>97.09651947021484 198.78801305979752</dataTimeWindow>
+            <misfit>0.40382197590779145</misfit>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.C1.CO03..BHZ" active="true" weight="1">
+          <waveformID networkCode="C1" stationCode="CO03" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>117.66993713378906 242.67780559622685</dataTimeWindow>
+            <misfit>0.41667968154092383</misfit>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.G.COYC.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="G" stationCode="COYC" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>286.7623291015625 626.225036574501</dataTimeWindow>
+            <misfit>0.4552608654726457</misfit>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.G.MPG.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="G" stationCode="MPG" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>366.3492431640625 839.4375857727591</dataTimeWindow>
+            <misfit>0.4231705042383354</misfit>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.G.FDFM.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="G" stationCode="FDFM" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>425.7598571777344 1003.1541235269528</dataTimeWindow>
+            <misfit>0.7644595822088242</misfit>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.G.UNM.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="G" stationCode="UNM" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>541.9688720703125 1342.2571962619663</dataTimeWindow>
+            <misfit>0.6745603307371035</misfit>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.IU.WVT.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="IU" stationCode="WVT" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>608.1990966796875 1551.3688174527317</dataTimeWindow>
+            <misfit>0.7550589250883999</misfit>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.IU.ANMO.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="IU" stationCode="ANMO" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>651.0338134765625 1695.0908374091962</dataTimeWindow>
+            <misfit>0.8519236213267937</misfit>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.G.PPTF.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="G" stationCode="PPTF" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>694.3988647460938 1849.553442105559</dataTimeWindow>
+            <misfit>0.8352995064529151</misfit>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.IM.BOSA..BHZ" active="true" weight="1">
+          <waveformID networkCode="IM" stationCode="BOSA" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>712.990234375 1919.2778369608695</dataTimeWindow>
+            <misfit>0.8215722682223014</misfit>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.PM.PFVI..BHZ" active="true" weight="1">
+          <waveformID networkCode="PM" stationCode="PFVI" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>717.4151611328125 1936.241771268476</dataTimeWindow>
+            <misfit>0.6615193415240205</misfit>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.G.TAM.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="G" stationCode="TAM" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>730.5615234375 1987.5835003456948</dataTimeWindow>
+            <misfit>0.6919843152698298</misfit>
+          </component>
+        </stationMomentTensorContribution>
+        <stationMomentTensorContribution publicID="MomentTensorStationContribution/test.IU.PAB.00.BHZ" active="true" weight="1">
+          <waveformID networkCode="IU" stationCode="PAB" locationCode="00" channelCode="BHZ"/>
+          <component phaseCode="W" component="0" active="true">
+            <weight>1</weight>
+            <timeShift>0</timeShift>
+            <dataTimeWindow>739.10009765625 2021.7520248568992</dataTimeWindow>
+            <misfit>0.6242170887228355</misfit>
+          </component>
+        </stationMomentTensorContribution>
       </momentTensor>
     </focalMechanism>
   </EventParameters>

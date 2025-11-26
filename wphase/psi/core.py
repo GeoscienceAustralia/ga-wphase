@@ -344,7 +344,7 @@ def wpinv(
 
     ol1 = OL1Result(
         preliminary_calc_details=pre_results,
-        used_traces=trlist,
+        used_traces=trlist_pre_con,
         nstations=len(accepted_traces),
         magnitude=round(pre_wp_mag, 1),
     )

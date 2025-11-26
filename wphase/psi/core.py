@@ -285,7 +285,7 @@ def wpinv(
         i += 1
 
 
-    logger.info(f"{len(trlist_pre)} traces remain after deconvolution and filtering")
+    logger.info(f"OL1: {len(trlist_pre)} traces remain after deconvolution and filtering")
 
     # Sorting the IDs according to their distance to the source:
     sorted_indices = np.argsort(DIST)
@@ -293,7 +293,7 @@ def wpinv(
         # Deduplicate on station ID:
         station_to_index = {trid.split(".")[1]: i for i, trid in enumerate(trlist_pre)}
         sorted_indices = [i for i in sorted_indices if i in station_to_index.values()]
-        logger.info(f"{len(sorted_indices)} traces remain after deduplicating stations")
+        logger.info(f"OL1: {len(sorted_indices)} traces remain after deduplicating stations")
     trlist_pre = [trlist_pre[i] for i in sorted_indices]
     tr_p2p = [tr_p2p[i] for i in sorted_indices]
     AZI = [AZI[i] for i in sorted_indices]
@@ -357,6 +357,7 @@ def wpinv(
     # using a different set of stations and can handle multiple components per
     # station (i.e. horizontals also)
     ########################################################################
+    logger.info("Starting OL2 calculation.")
 
     # Redefine and define some values according to the pre_wp_mag
     Ta, Tb = get_corner_freqs_from_mag(pre_wp_mag)
@@ -442,9 +443,19 @@ def wpinv(
 
         DIST.append(dist)
 
+    logger.info(f"OL2: {len(trlist)} traces remain after deconvolution and filtering")
+
     DIST = np.array(DIST)
-    trlist = [trlist[i] for i in np.argsort(DIST)]
-    tr_p2p = [tr_p2p[i] for i in np.argsort(DIST)]
+    sorted_indices = np.argsort(DIST)
+    if settings.DEDUPLICATE_STATIONS:
+        # Deduplicate on station ID:
+        station_to_index = {trid.split(".")[1]: i for i, trid in enumerate(trlist)}
+        sorted_indices = [i for i in sorted_indices if i in station_to_index.values()]
+        logger.info(f"OL2: {len(sorted_indices)} traces remain after deduplicating stations")
+
+    trlist = [trlist[i] for i in sorted_indices]
+    tr_p2p = [tr_p2p[i] for i in sorted_indices]
+    DIST = [DIST[i] for i in sorted_indices]
 
     # Rejecting outliers:
     observed_displacements = np.array([]) # observed displacements vector.

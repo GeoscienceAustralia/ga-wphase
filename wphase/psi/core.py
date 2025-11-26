@@ -297,7 +297,7 @@ def wpinv(
     trlist_pre = [trlist_pre[i] for i in sorted_indices]
     tr_p2p = [tr_p2p[i] for i in sorted_indices]
     AZI = [AZI[i] for i in sorted_indices]
-    DIST = np.sort(DIST)
+    DIST = [DIST[i] for i in sorted_indices]
 
     # Median rejection
     median_p2p = np.nanmedian(tr_p2p)

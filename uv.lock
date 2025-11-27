@@ -1374,7 +1374,7 @@ wheels = [
 
 [[package]]
 name = "wphase"
-version = "0.3.11"
+version = "0.3.12"
 source = { editable = "." }
 dependencies = [
     { name = "h5py" },

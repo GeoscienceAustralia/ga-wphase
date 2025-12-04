@@ -9,8 +9,9 @@ from obspy.core import UTCDateTime, Stream
 
 try:
     from obspy.clients.fdsn import Client
+    from obspy.clients.fdsn.header import FDSNNoDataException
 except ImportError:
-    from obspy.fdsn import Client
+    from obspy.fdsn import Client, FDSNNoDataException
 
 try:
     from obspy.geodetics import locations2degrees
@@ -228,12 +229,13 @@ def get_waveforms(
         # make a call for each subset
         # TODO: One might want to do this in parallel.
         for chunk in bulk_chunks:
-            # TODO: Do want to try/catch here?
             try:
                 st += client.get_waveforms_bulk(chunk)
+            except FDSNNoDataException:
+                # Just an empty chunk, all's good
             except Exception as e:
                 logger.error('Problem with request from server %s:\n%s', client.base_url, str(e))
-                continue
+                # But keep going to try to get the best result we can
     if save_path:
         logger.info("Saving waveforms in %s", save_path)
         st.write(save_path, format='MSEED')

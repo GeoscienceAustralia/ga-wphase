@@ -102,7 +102,7 @@ def load_metadata(
             if depth >= 2:
                 args["station"] = sta
             if depth >= 3:
-                args["channel"] = cha
+                args["channel"] = chan
 
             return partial(make_call, **args)
 

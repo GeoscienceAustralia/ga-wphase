@@ -232,7 +232,7 @@ def get_waveforms(
             try:
                 st += client.get_waveforms_bulk(chunk)
             except FDSNNoDataException:
-                # Just an empty chunk, all's good
+                pass # Just an empty chunk, all's good
             except Exception as e:
                 logger.error('Problem with request from server %s:\n%s', client.base_url, str(e))
                 # But keep going to try to get the best result we can

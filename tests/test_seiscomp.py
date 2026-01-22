@@ -1,4 +1,6 @@
 from functools import partial
+import re
+from pathlib import Path
 from wphase.psi.model import WPhaseResult
 from wphase.seiscomp import createObjects, writeSCML
 from seiscomp.core import Time
@@ -74,9 +76,27 @@ def test_create_objects(tests_dir):
     assert mm.originID() == do.publicID()
 
 
+def replace_in_file(path: Path, pattern: re.Pattern[str], repl: str):
+    with path.open("r+") as f:
+        newtext = pattern.sub(repl, f.read())
+        f.seek(0)
+        f.write(newtext)
+        f.truncate()
+
+
+SEISCOMP_ROOT_ELEMENT = re.compile(r"<seiscomp [^>]+>")
+
+
 def test_write_scml(golden, tests_dir, tmp_path):
     sample = WPhaseResult.parse_file(tests_dir / "ga2023fsbydd-result.json")
     objects = createObjects(sample, "GA", publicid_slug="test")
     outfile = tmp_path / "new.xml"
     writeSCML(outfile, objects)
+
+    # Replace the xmlns + version attributes with a placeholder
+    # to avoid dependence on the seiscomp version
+    replace_in_file(
+        outfile, SEISCOMP_ROOT_ELEMENT, '<seiscomp xmlns="elided" version="elided">'
+    )
+
     golden.test(tests_dir / "ga2023fsbydd-sc3.xml").check_file(outfile)

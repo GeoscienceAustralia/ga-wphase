@@ -260,7 +260,7 @@ def wpinv(
                 G,
                 dt,
                 corners=4,
-                baselinelen=60./dt,
+                baselinelen=60.,
                 taperlen=10.,
                 fmin=1./Tb,
                 fmax=1./Ta,
@@ -422,7 +422,7 @@ def wpinv(
             tr.data, coeff = RTdeconv(
                 tr, om0, h, G, dt,
                 corners=4,
-                baselinelen=60./dt,
+                baselinelen=60.,
                 taperlen= 10.,
                 fmin = 1./Tb,
                 fmax = 1./Ta,
@@ -933,7 +933,7 @@ def RTdeconv(
         c2 = (1. + 2.*h*om0*dt + dt*dt*om0*om0)/G/dt
 
         aux = c2*datap2 + c1*datap1[:-1] + c0*data[:-2]
-        accel = aux[0]*np.ones(len(data))
+        accel = np.zeros_like(data)
         accel[2:] = np.cumsum(aux)
     elif data_type == 'accel':
         accel = data

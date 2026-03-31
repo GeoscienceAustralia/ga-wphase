@@ -8,7 +8,7 @@ from typing import List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
-def send_email(recipients: List[str], subject: List[str], message: Union[str, MIMEBase], from_email: Optional[str] = None, method='ses', **kwargs):
+def send_email(recipients: List[str], subject: str, message: Union[str, MIMEBase], from_email: Optional[str] = None, method='ses', **kwargs):
     """Send a simple HTML email via either SES or SMTP."""
     if method == 'ses':
         from wphase.aws import send_email_via_ses

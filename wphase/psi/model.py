@@ -78,7 +78,7 @@ class OL2Result(Data):
     time_delay: float
     used_traces: List[str]
     trace_lengths: OrderedDict[str, int]
-    trace_misfits: OrderedDict[str, float]
+    trace_misfits: Optional[OrderedDict[str, float]]
     trace_time_windows: Optional[OrderedDict[str, Tuple[float, float]]]
 
     moment_tensor: Optional[np.ndarray] = Field(exclude=True)
@@ -91,7 +91,7 @@ class OL3Result(OL2Result):
     centroid."""
 
     centroid: Tuple[float, float, float]
-    centroid_time: UTCDateTime
+    centroid_time: Optional[UTCDateTime]
 
     grid_search_candidates: Optional[List[Tuple[float, float, float]]] = Field(exclude=True)
     """List of inputs to core_inversion that were used in the grid search.
@@ -167,7 +167,7 @@ class CentroidLocation(Data):
     depth: float
     latitude: float
     longitude: float
-    time: UTCDateTime
+    time: Optional[UTCDateTime]
 
 
 class TimeDelayMisfits(Data):

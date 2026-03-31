@@ -153,6 +153,11 @@ class WPhase(Application):
             "Time of the event.")
         self.commandline().addStringOption(
             "Input",
+            "event-json",
+            "Path to JSON file containing triggering event parameters"
+        )
+        self.commandline().addStringOption(
+            "Input",
             "magtype",
             "The type of magnitude of the triggering event.")
         self.commandline().addStringOption(
@@ -284,12 +289,12 @@ class WPhase(Application):
             getter(name, to=to, conv=lambda x: True)
 
 
-        try:
+        if unrecognized := self.commandline().unrecognizedOptions():
             # If there is an unrecognized option it must be a JSON file
             # of wphase outputs. In this case, the file is parsed and pushed
             # to the messaging system and written to disk.
-            self.filename = self.commandline().unrecognizedOptions()[0]
-        except Exception:
+            self.filename = unrecognized[0]
+        else:
             # Otherwise we expect a description of the location. Wphase is
             # then run and results pushed pushed to the messaging system
             # and written to disk.
@@ -320,28 +325,36 @@ class WPhase(Application):
                     time=self.commandline().optionString("time"),
                 )
             except Exception:
-                if not (self.fdsn_client and self.evid):
-                    logger.error('You must provide a JSON payload, lat/lon/time or an evid to fetch from FDSN')
-                    return False
                 try:
-                    cat = self.fdsn_client.get_events(eventid=self.evid)
-                    origin: Origin = cat.events[0].preferred_origin()
+                    eventfile = self.commandline().optionString("event-json")
                 except Exception:
-                    logger.exception("Could not retrieve event %s from FDSN server at %s",
-                                     self.evid, self.server)
-                    return False
-                self.eqinfo = model.Event(
-                    longitude=origin.longitude,
-                    latitude=origin.latitude,
-                    depth=origin.depth / 1000,
-                    time=origin.time,
-                    creation_time=origin.creation_info and origin.creation_info.creation_time,
-                )
-                self.triggering_origin_id = re.sub(
-                    r"^smi:org.gfz-potsdam.de/geofon/",
-                    "",
-                    str(origin.resource_id),
-                )
+                    eventfile = None
+                if eventfile:
+                    self.eqinfo = model.WPhaseResult.parse_file(eventfile).Event
+                    self.evid = self.eqinfo.id
+                else:
+                    if not (self.fdsn_client and self.evid):
+                        logger.error('You must provide a JSON payload, lat/lon/time or an evid to fetch from FDSN')
+                        return False
+                    try:
+                        cat = self.fdsn_client.get_events(eventid=self.evid)
+                        origin: Origin = cat.events[0].preferred_origin()
+                    except Exception:
+                        logger.exception("Could not retrieve event %s from FDSN server at %s",
+                                         self.evid, self.server)
+                        return False
+                    self.eqinfo = model.Event(
+                        longitude=origin.longitude,
+                        latitude=origin.latitude,
+                        depth=origin.depth / 1000,
+                        time=origin.time,
+                        creation_time=origin.creation_info and origin.creation_info.creation_time,
+                    )
+                    self.triggering_origin_id = re.sub(
+                        r"^smi:org.gfz-potsdam.de/geofon/",
+                        "",
+                        str(origin.resource_id),
+                    )
 
             getter('sourcezone')
             getter('magtype', 'mag_type')
@@ -375,6 +388,9 @@ class WPhase(Application):
             if self.evid is not None:
                 self.output = os.path.join(self.output, self.evid)
                 self.eqinfo.id = self.evid
+
+            if self.triggering_origin_id is not None:
+                self.eqinfo.origin_id = self.triggering_origin_id
 
             if self.resultid is not None:
                 self.output = os.path.join(self.output, self.resultid)

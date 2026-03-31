@@ -112,6 +112,7 @@ class Event(Data):
     longitude: float
     time: UTCDateTime
     creation_time: Optional[UTCDateTime] = None
+    origin_id: Optional[str] = None
 
 
 class AntelopeMomentTensor(Data):

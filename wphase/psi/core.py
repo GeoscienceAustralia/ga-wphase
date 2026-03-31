@@ -57,7 +57,7 @@ def screened(name, before, after, **kw):
     }, **kw)
 
 def screen(stage: str, trid: str, passed: bool, info: str = ""):
-    logger.warning(f"SCREEN {stage},{trid},{passed},{info!r}")
+    logger.debug(f"SCREEN {stage},{trid},{passed},{info!r}")
 
 def wpinv(
     st: Stream,
@@ -926,15 +926,15 @@ def RTdeconv(
     :return: Time series with the deconvoluted displacement trace
     '''
 
-    if G <= 0.:
+    if G is None or G <= 0.:
         # I guess this should never occur, but I was getting division by
         # zero erros in RTdeconv due either this or dt being equal to zero
-        raise RTdeconvError("Negative or zero sensitivity, skipping: {}".format(tr.id))
+        raise RTdeconvError("Non-positive or missing sensitivity, skipping: {}".format(tr.id))
 
-    if dt <= 0.:
+    if dt is None or dt <= 0.:
         # I guess this should never occur, but I was getting division by
         # zero erros in RTdeconv due either this or G being equal to zero
-        raise RTdeconvError("Negative or sampling rate, skipping: {}".format(tr.id))
+        raise RTdeconvError("Non-positive or missing sampling rate, skipping: {}".format(tr.id))
 
     if len(tr.data) <= 2:
         # Traces of length <=2 were throwing runtime exceptions; so we need to

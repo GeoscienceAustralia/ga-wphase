@@ -28,7 +28,7 @@ def get_azimuths(meta, trlist, loc):
     station ids and location of the epicentre.
     '''
     return [
-        gps2dist_azimuth(loc[0], loc[1], meta[t]["latitude"], meta[t]["longitude"])[2]
+        gps2dist_azimuth(loc[0], loc[1], meta[t]["latitude"], meta[t]["longitude"])[1]
         for t in trlist
     ]
 

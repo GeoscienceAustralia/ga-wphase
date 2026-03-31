@@ -277,6 +277,8 @@ def runwphase(
             except Exception as e:
                 if raise_errors:
                     raise
+                else:
+                    logger.exception("Error during post-processing")
                 wphase_output.add_warning("Error during post-processing. %s" % format_exc())
         wphase_output.WPInvProfile = profiler.html
 

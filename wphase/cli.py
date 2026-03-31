@@ -20,7 +20,7 @@ import seiscomp.logging
 from wphase import logger, runwphase, settings
 from wphase.psi import model
 from wphase.email import send_email
-from wphase.seiscomp import createAndSendObjects, writeSCML, charstar
+from wphase.seiscomp import createAndSendObjects, writeSCML, charstar, createObjects
 
 
 class LogRelay(logging.Handler):
@@ -88,6 +88,7 @@ class WPhase(Application):
         self.bucket_name = None
         self.agency = 'GA'
         self.make_maps = True
+        self.offline = False
         self.overwrite = False
         self.save_waveforms = None
         self.save_inventory = None
@@ -265,6 +266,10 @@ class WPhase(Application):
             "Input",
             "overwrite",
             "Whether to overwrite existing outputs or not.")
+        self.commandline().addOption(
+            "Output",
+            "offline",
+            "If true, don't send results on messaging")
 
     def processArg(self, name, to=None, default=None, conv=str):
         if to is None:
@@ -377,6 +382,7 @@ class WPhase(Application):
             getter('agency')
             getflag('make-maps', 'make_maps')
             getflag('overwrite', 'overwrite')
+            getflag('offline', 'offline')
 
             getter('smtp-server', 'smtp_server')
             getter('smtp-port', 'smtp_port')
@@ -384,6 +390,9 @@ class WPhase(Application):
             getter('smtp-password', 'smtp_password')
             getflag('smtp-ssl', 'smtp_ssl')
             getflag('smtp-tls', 'smtp_tls')
+
+            if self.offline:
+                self.setMessagingEnabled(False)
 
             if self.evid is not None:
                 self.output = os.path.join(self.output, self.evid)
@@ -479,13 +488,21 @@ class WPhase(Application):
 
         if result is not None:
             try:
-                objs = createAndSendObjects(
-                    result,
-                    self.connection(),
-                    evid=self.evid,
-                    agency=self.agency,
-                    triggering_origin_id=self.triggering_origin_id,
-                )
+                if self.offline:
+                    objs = createObjects(
+                        result,
+                        evid=self.evid,
+                        agency=self.agency,
+                        triggering_origin_id=self.triggering_origin_id,
+                     )
+                else:
+                    objs = createAndSendObjects(
+                        result,
+                        self.connection(),
+                        evid=self.evid,
+                        agency=self.agency,
+                        triggering_origin_id=self.triggering_origin_id,
+                    )
             except Exception:
                 logger.exception("Failed to create objects for SC3.")
             else:

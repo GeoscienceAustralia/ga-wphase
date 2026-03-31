@@ -12,7 +12,7 @@ from obspy.core import UTCDateTime
 
 logger = logging.getLogger("wphase.tests")
 
-DATASETS_URL = 'https://github.com/GeoscienceAustralia/ga-wphase/releases/download/v0.3/ga-wphase-test-datasets.tar.gz'
+DATASETS_URL = 'https://github.com/GeoscienceAustralia/ga-wphase/releases/download/v0.3.2/ga-wphase-test-datasets.tar.gz'
 TESTS_DIR = Path(__file__).parent
 DOWNLOADED_DIR = TESTS_DIR / "downloaded"
 BIG_FILES_DIR = DOWNLOADED_DIR / "test-datasets"

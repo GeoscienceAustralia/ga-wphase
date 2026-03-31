@@ -24,7 +24,7 @@ from tests.validation_cases import (
     get_dataset,
     result_keys,
     dump_case,
-    TESTS_DIR,
+    DOWNLOADED_DIR,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -71,7 +71,7 @@ def recompute_case(case):
 def main():
     updated_cases = [recompute_case(c) for c in cases]
 
-    outpath = Path(TESTS_DIR) / "validation_cases.json"
+    outpath = Path(DOWNLOADED_DIR) / "validation_cases.json"
     log.info("Writing updated expected results to %s", outpath)
 
     with outpath.open("w") as fh:

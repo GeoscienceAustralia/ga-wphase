@@ -1,8 +1,9 @@
+from pathlib import Path
 import json
 import logging
 import tarfile
 import os
-from os.path import join, exists, dirname
+from os.path import join, exists
 from urllib.request import urlretrieve
 from tempfile import NamedTemporaryFile
 
@@ -12,17 +13,18 @@ from obspy.core import UTCDateTime
 logger = logging.getLogger("wphase.tests")
 
 DATASETS_URL = 'https://github.com/GeoscienceAustralia/ga-wphase/releases/download/v0.3/ga-wphase-test-datasets.tar.gz'
-DATA_DIR = 'test-datasets'
-TESTS_DIR = dirname(__file__)
+TESTS_DIR = Path(__file__).parent
+DOWNLOADED_DIR = TESTS_DIR / "downloaded"
+BIG_FILES_DIR = DOWNLOADED_DIR / "test-datasets"
 
 def fetch_datasets():
     """Download and extract the test datasets."""
-    tarball_path = join(TESTS_DIR, 'dl.tar.gz')
+    tarball_path = TESTS_DIR / "dl.tar.gz"
     logger.warning("Downloading test datasets from %s", DATASETS_URL)
     urlretrieve(DATASETS_URL, tarball_path)
     with tarfile.open(tarball_path, "r:gz") as tarball:
-        logger.warning("Extracting test datasets to %s", TESTS_DIR)
-        tarball.extractall(path=TESTS_DIR)
+        logger.warning("Extracting test datasets to %s", DOWNLOADED_DIR)
+        tarball.extractall(path=DOWNLOADED_DIR)
     os.remove(tarball_path)
 
 
@@ -30,12 +32,12 @@ def get_dataset(eqinfo):
     """Retrieve a test dataset, either from the local cache directory or from
     the web."""
     evid = eqinfo["id"]
-    wfpath = join(TESTS_DIR, DATA_DIR, "{}.mseed".format(evid))
-    invpath = join(TESTS_DIR, DATA_DIR, "{}.xml".format(evid))
-    if not (exists(wfpath) and exists(invpath)):
+    wfpath = BIG_FILES_DIR / f"{evid}.mseed"
+    invpath = BIG_FILES_DIR / f"{evid}.xml"
+    if not (wfpath.exists() and invpath.exists()):
         fetch_datasets()
-    if not (exists(wfpath) and exists(invpath)):
-        raise Exception("Dataset {evid} missing even after running fetch_datasets!")
+    if not (wfpath.exists() and invpath.exists()):
+        raise Exception(f"Dataset {evid} missing even after running fetch_datasets!")
     inventory = obspy.read_inventory(invpath)
     waveforms = obspy.read(wfpath)
     return inventory, waveforms
@@ -65,7 +67,7 @@ def dump_case(case):
     return case
 
 def _load_cases():
-    with open(join(TESTS_DIR, "validation_cases.json")) as fh:
+    with (DOWNLOADED_DIR / "validation_cases.json").open() as fh:
         return [parse_case(x) for x in json.load(fh)]
 
 try:
@@ -76,5 +78,5 @@ except FileNotFoundError:
 
 def add_case(case):
     cases.append(case)
-    with open(join(TESTS_DIR, "validation_cases.json"), "w") as fh:
+    with open(join(DOWNLOADED_DIR, "validation_cases.json"), "w") as fh:
         json.dump([dump_case(x) for x in cases], fh, indent=4)

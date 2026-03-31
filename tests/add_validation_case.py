@@ -10,7 +10,7 @@ from obspy import UTCDateTime
 
 from eatws_skip_client import SKIP, Event
 from wphase import runwphase
-from tests.validation_cases import result_keys, DATA_DIR, add_case
+from tests.validation_cases import result_keys, BIG_FILES_DIR, add_case
 
 # get event data from production SKIP
 skip = SKIP("https://skip.eatws.net", secret_id="skip-prod-readonly-access")
@@ -29,7 +29,7 @@ def prepare_test_case(evid, inventory=None, waveforms=None):
         dep=event.depth_km,
         time=UTCDateTime(event.event_time),
     )
-    datadir = abspath(DATA_DIR)
+    datadir = abspath(BIG_FILES_DIR)
     result = runwphase(
         server="IRIS",
         eqinfo=eqinfo,

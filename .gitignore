@@ -7,6 +7,7 @@ _Inline/
 Wphase.egg*/
 /outputs
 /tests/test-datasets
+/tests/downloaded
 prof
 tests/prof
 /scratch
@@ -14,3 +15,5 @@ tests/prof
 /CMakeCache.txt
 /tests/validation_cases.json
 tests/*.tar.gz
+*.xml
+*.mseed

@@ -254,9 +254,8 @@ def post_process_wpinv(
     MT = None
     mtResult: Optional[model.OL2Result] = output.OL3 or output.OL2
 
-    if output.OL1:
-        traces = output.OL1.used_traces
-        prelim = output.OL1.preliminary_calc_details
+    if (output.OL1 and (traces := output.OL1.used_traces) 
+            and (prelim := output.OL1.preliminary_calc_details)):
         fname = os.path.join(working_dir, settings.PRELIM_FIT_PREFIX) + ".png"
         plot_preliminary_fit(eqinfo, filename=fname, **prelim)
     else:
@@ -265,10 +264,14 @@ def post_process_wpinv(
     if mtResult:
         MT = mtResult.moment_tensor
         traces = mtResult.used_traces
+        azimuths = get_azimuths(metadata, traces, (eqinfo.latitude, eqinfo.longitude))
+        logger.debug(f"EVENT LONLAT: {eqinfo.longitude:.2f}, {eqinfo.latitude:.2f}")
+        for tr, az in zip(traces, azimuths):
+            lat = metadata[tr]["latitude"]
+            lon = metadata[tr]["longitude"]
+            logger.debug(f"{tr} @ {lon:.2f}, {lat:.2f}: {az:.1f}")
         output.QualityParams = model.Quality(
-            azimuthal_gap=azimuthal_gap(
-                get_azimuths(metadata, traces, (eqinfo.latitude, eqinfo.longitude))
-            ),
+            azimuthal_gap=azimuthal_gap(azimuths),
             number_of_stations=len(set(trid.split(".")[1] for trid in traces)),
             number_of_channels=len(traces),
         )

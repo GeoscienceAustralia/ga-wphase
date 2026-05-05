@@ -278,6 +278,7 @@ def remove_gappy_traces(st):
     rep_ids = [trid for trid, nrep in list(Counter(trlist_data).items())
                if nrep > 1]
     st = Stream(tr for tr in st if tr.id not in rep_ids)
+    logger.info(f"Removed traces due to gaps: {sorted(rep_ids)}")
     return st
 
 
